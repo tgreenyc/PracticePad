@@ -1,4 +1,5 @@
 import AppKit
+import UniformTypeIdentifiers
 
 struct FileImporter {
     enum ImportError: LocalizedError {
@@ -10,18 +11,32 @@ struct FileImporter {
             case .cancelled:
                 return "File selection was cancelled."
             case .invalidType:
-                return "Please choose a valid MP3 file."
+                return "Please choose a valid audio or video file."
             }
         }
     }
 
-    static func openMP3File(completion: @escaping (Result<URL, Error>) -> Void) {
+    /// Audio and video containers we can open. `AVAudioFile` reads the audio
+    /// track out of video containers, so mp4/mov are valid here too.
+    static let supportedContentTypes: [UTType] = [
+        .mp3, .mpeg4Audio, .wav, .aiff,
+        .mpeg4Movie, .quickTimeMovie,
+    ]
+
+    /// File extensions matching `supportedContentTypes`, for validating drops
+    /// (where we only have a URL, not a resolved UTType).
+    static let supportedExtensions: Set<String> = [
+        "mp3", "m4a", "aac", "wav", "aif", "aiff",
+        "mp4", "m4v", "mov",
+    ]
+
+    static func openMediaFile(completion: @escaping (Result<URL, Error>) -> Void) {
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.mp3]
+        panel.allowedContentTypes = supportedContentTypes
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         panel.canChooseFiles = true
-        panel.title = "Choose an MP3 file"
+        panel.title = "Choose an audio or video file"
 
         panel.begin { response in
             switch response {

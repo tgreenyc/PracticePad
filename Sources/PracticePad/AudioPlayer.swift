@@ -15,6 +15,11 @@ final class AudioPlayer: ObservableObject {
     @Published private(set) var waveform: [Float] = []
     /// Most-recently-opened files, newest first, for the Open Recent menu.
     @Published private(set) var recentFiles: [URL] = []
+    /// True when the loaded file carries a video track worth showing.
+    @Published private(set) var hasVideo = false
+    /// A muted `AVPlayer` for the picture only; audio always comes from the
+    /// engine. Slaved to the audio clock so pitch/speed/loop stay authoritative.
+    @Published private(set) var videoPlayer: AVPlayer?
 
     /// True only when both loop points are set and in the correct order.
     var isLoopValid: Bool {
@@ -24,6 +29,9 @@ final class AudioPlayer: ObservableObject {
     @Published var rate: Double = 1.0 {
         didSet {
             timePitch.rate = Float(rate)
+            // Match the picture's playback rate so it stays in step; pitch shift
+            // doesn't alter timing, so the video ignores it.
+            videoPlayer?.rate = isPlaying ? Float(rate) : 0
             UserDefaults.standard.set(rate, forKey: Self.rateKey)
         }
     }
@@ -175,6 +183,7 @@ final class AudioPlayer: ObservableObject {
 
             clearLoop()
             loadWaveform(url: url)
+            setupVideo(url: url)
             UserDefaults.standard.set(url.path, forKey: Self.lastFileKey)
             addRecentFile(url)
 
@@ -186,8 +195,29 @@ final class AudioPlayer: ObservableObject {
 
             scheduleSegmentIfNeeded()
         } catch {
-            errorMessage = "Unable to load MP3 file. \(error.localizedDescription)"
+            errorMessage = "Unable to load media file. \(error.localizedDescription)"
             removeRecentFile(url)
+        }
+    }
+
+    /// Tear down any existing video player, then asynchronously check whether
+    /// `url` has a video track and, if so, build a muted player for the picture.
+    private func setupVideo(url: URL) {
+        videoPlayer = nil
+        hasVideo = false
+        let asset = AVURLAsset(url: url)
+        asset.loadTracks(withMediaType: .video) { [weak self] tracks, _ in
+            let hasVideoTrack = (tracks?.isEmpty == false)
+            DispatchQueue.main.async {
+                guard let self, self.audioFileURL == url, hasVideoTrack else { return }
+                let player = AVPlayer(playerItem: AVPlayerItem(asset: asset))
+                player.isMuted = true
+                player.volume = 0
+                player.actionAtItemEnd = .pause
+                self.videoPlayer = player
+                self.hasVideo = true
+                self.resyncVideo(seek: true)
+            }
         }
     }
 
@@ -214,9 +244,9 @@ final class AudioPlayer: ObservableObject {
         UserDefaults.standard.set(recentFiles.map(\.path), forKey: Self.recentFilesKey)
     }
 
-    /// Present the open panel and load the chosen MP3.
+    /// Present the open panel and load the chosen media file.
     func requestOpen() {
-        FileImporter.openMP3File { [weak self] result in
+        FileImporter.openMediaFile { [weak self] result in
             DispatchQueue.main.async {
                 switch result {
                 case let .success(url):
@@ -240,13 +270,15 @@ final class AudioPlayer: ObservableObject {
         currentTime = 0
         totalFrames = 0
         waveform = []
+        videoPlayer = nil
+        hasVideo = false
         clearLoop()
         UserDefaults.standard.removeObject(forKey: Self.lastFileKey)
     }
 
     func play() {
         guard audioFile != nil else {
-            errorMessage = "Open an MP3 file before playback."
+            errorMessage = "Open a file before playback."
             return
         }
 
@@ -256,6 +288,7 @@ final class AudioPlayer: ObservableObject {
             playerNode.play()
             isPlaying = true
             startDisplayTimer()
+            resyncVideo(seek: true)
         } catch {
             errorMessage = "Audio error: \(error.localizedDescription)"
         }
@@ -266,6 +299,7 @@ final class AudioPlayer: ObservableObject {
         playerNode.pause()
         isPlaying = false
         stopDisplayTimer()
+        videoPlayer?.pause()
     }
 
     func togglePlayPause() {
@@ -291,6 +325,8 @@ final class AudioPlayer: ObservableObject {
         seekFrame = 0
         currentTime = 0
         stopDisplayTimer()
+        videoPlayer?.pause()
+        videoPlayer?.seek(to: .zero)
     }
 
     /// Seek to an absolute time in the track, resuming playback if it was
@@ -322,6 +358,7 @@ final class AudioPlayer: ObservableObject {
             isPlaying = true
             startDisplayTimer()
         }
+        resyncVideo(seek: true)
     }
 
     /// Called continuously while the user drags the scrubber. Updates the
@@ -383,6 +420,7 @@ final class AudioPlayer: ObservableObject {
         scheduleLoop(file: file, resumeFrom: resetToStart ? nil : currentTime)
         playerNode.play()
         startDisplayTimer()
+        resyncVideo(seek: true)
     }
 
     /// Rebuild playback for the current loop state. If playing, reschedules in
@@ -412,6 +450,7 @@ final class AudioPlayer: ObservableObject {
         scheduleSegmentIfNeeded()
         playerNode.play()
         startDisplayTimer()
+        resyncVideo(seek: true)
     }
 
     /// Move just the in-point (A handle), clamped so it can't cross the
@@ -570,6 +609,7 @@ final class AudioPlayer: ObservableObject {
         seekFrame = totalFrames
         currentTime = duration
         stopDisplayTimer()
+        videoPlayer?.pause()
     }
 
     private func startDisplayTimer() {
@@ -667,10 +707,42 @@ final class AudioPlayer: ObservableObject {
                 frame = loopBufferStartFrame + within
             }
             currentTime = min(Double(frame) / sampleRate, duration)
+            checkVideoDrift()
             return
         }
 
         let time = Double(seekFrame + playerTime.sampleTime) / sampleRate
         currentTime = min(time, duration)
+        checkVideoDrift()
+    }
+
+    /// Make the video player match the audio's current position and play state.
+    /// Called on discrete transport changes (play/pause/seek/loop edits).
+    private func resyncVideo(seek: Bool) {
+        guard let vp = videoPlayer else { return }
+        if seek {
+            let target = CMTime(seconds: min(max(0, currentTime), duration), preferredTimescale: 600)
+            let tol = CMTime(seconds: 0.03, preferredTimescale: 600)
+            vp.seek(to: target, toleranceBefore: tol, toleranceAfter: tol)
+        }
+        if isPlaying {
+            vp.playImmediately(atRate: Float(rate))
+        } else {
+            vp.pause()
+        }
+    }
+
+    /// While playing, nudge the video back onto the audio clock if it has
+    /// drifted. Also catches the gapless loop wrap (B→A), where the audio time
+    /// jumps back and the picture must follow.
+    private func checkVideoDrift() {
+        guard let vp = videoPlayer, isPlaying, vp.rate != 0 else { return }
+        let videoTime = vp.currentTime().seconds
+        guard videoTime.isFinite else { return }
+        if abs(videoTime - currentTime) > 0.08 {
+            let target = CMTime(seconds: min(max(0, currentTime), duration), preferredTimescale: 600)
+            let tol = CMTime(seconds: 0.03, preferredTimescale: 600)
+            vp.seek(to: target, toleranceBefore: tol, toleranceAfter: tol)
+        }
     }
 }

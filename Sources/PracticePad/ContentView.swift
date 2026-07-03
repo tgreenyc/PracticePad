@@ -1,49 +1,32 @@
+import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
 struct ContentView: View {
     @ObservedObject var player: AudioPlayer
     @State private var isDropTargeted = false
+    @State private var isFullScreen = false
+    @State private var dragStartHeight: Double?
+    @AppStorage("PracticePad.videoHeight") private var videoHeight: Double = 240
+
+    private static let minVideoHeight: Double = 120
+    private static let maxVideoHeight: Double = 900
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("PracticePad")
-                .font(.title)
-                .bold()
-
-            transportBar
-
-            statusLine
-
-            GroupBox {
-                waveformSection
+        Group {
+            if isFullScreen, player.hasVideo {
+                fullScreenVideo
+            } else {
+                mainLayout
             }
-
-            GroupBox(label: Label("Loop", systemImage: "repeat")) {
-                loopSection
-            }
-
-            GroupBox(label: Label("Playback", systemImage: "slider.horizontal.3")) {
-                speedPitchSection
-            }
-
-            if let errorMessage = player.errorMessage {
-                Text(errorMessage)
-                    .foregroundColor(.red)
-                    .font(.footnote)
-            }
-
-            Spacer()
         }
-        .padding(20)
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(Color.accentColor, lineWidth: 2)
-                .padding(6)
-                .opacity(isDropTargeted ? 1 : 0)
-        )
         .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
             handleDrop(providers)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { _ in
+            // Keep our state in sync if the user leaves OS full screen via the
+            // green button or the standard shortcut rather than our controls.
+            isFullScreen = false
         }
         .alert("Load Error", isPresented: Binding(
             get: { player.errorMessage != nil },
@@ -57,6 +40,190 @@ struct ContentView: View {
         }
     }
 
+    private var mainLayout: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("PracticePad")
+                    .font(.title)
+                    .bold()
+
+                transportBar
+
+                statusLine
+
+                if player.hasVideo {
+                    videoSection
+                }
+
+                GroupBox {
+                    waveformSection
+                }
+
+                GroupBox(label: Label("Loop", systemImage: "repeat")) {
+                    loopSection
+                }
+
+                GroupBox(label: Label("Playback", systemImage: "slider.horizontal.3")) {
+                    speedPitchSection
+                }
+
+                if let errorMessage = player.errorMessage {
+                    Text(errorMessage)
+                        .foregroundColor(.red)
+                        .font(.footnote)
+                }
+            }
+            .padding(20)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(GeometryReader { geo in
+                Color.clear.preference(key: ContentHeightKey.self, value: geo.size.height)
+            })
+        }
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.accentColor, lineWidth: 2)
+                .padding(6)
+                .opacity(isDropTargeted ? 1 : 0)
+        )
+        .onPreferenceChange(ContentHeightKey.self) { height in
+            growWindow(toFitContentHeight: height)
+        }
+    }
+
+    // MARK: - Video
+
+    /// Resizable video pane: the picture with a full-screen button overlay and
+    /// a drag handle beneath it to adjust its height.
+    private var videoSection: some View {
+        VStack(spacing: 0) {
+            VideoPlayerView(player: player.videoPlayer)
+                .frame(height: videoHeight)
+                .frame(maxWidth: .infinity)
+                .background(Color.black)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(alignment: .topTrailing) {
+                    Button {
+                        enterFullScreen()
+                    } label: {
+                        Image(systemName: "arrow.up.left.and.arrow.down.right")
+                            .font(.title3)
+                            .padding(6)
+                            .background(.black.opacity(0.45), in: Circle())
+                            .foregroundStyle(.white)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(8)
+                    .help("Full screen")
+                }
+
+            resizeHandle
+        }
+    }
+
+    private var resizeHandle: some View {
+        Capsule()
+            .fill(Color.secondary.opacity(0.5))
+            .frame(width: 44, height: 5)
+            .padding(.vertical, 5)
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
+            .onHover { inside in
+                if inside { NSCursor.resizeUpDown.push() } else { NSCursor.pop() }
+            }
+            .gesture(
+                DragGesture()
+                    .onChanged { value in
+                        if dragStartHeight == nil { dragStartHeight = videoHeight }
+                        let base = dragStartHeight ?? videoHeight
+                        videoHeight = min(
+                            max(Self.minVideoHeight, base + Double(value.translation.height)),
+                            Self.maxVideoHeight
+                        )
+                    }
+                    .onEnded { _ in dragStartHeight = nil }
+            )
+            .help("Drag to resize the video")
+    }
+
+    private var fullScreenVideo: some View {
+        ZStack(alignment: .bottom) {
+            Color.black.ignoresSafeArea()
+
+            VideoPlayerView(player: player.videoPlayer)
+                .ignoresSafeArea()
+
+            fullScreenControls
+                .padding(.bottom, 24)
+        }
+        .onExitCommand { exitFullScreen() }
+    }
+
+    private var fullScreenControls: some View {
+        HStack(spacing: 20) {
+            Button {
+                player.stop()
+            } label: {
+                Image(systemName: "stop.fill").font(.title2)
+            }
+            .disabled(!player.isPlaying)
+
+            Button {
+                player.togglePlayPause()
+            } label: {
+                Image(systemName: player.isPlaying ? "pause.fill" : "play.fill").font(.title)
+            }
+
+            Text("\(Self.timeString(player.currentTime)) / \(Self.timeString(player.duration))")
+                .font(.callout)
+                .monospacedDigit()
+
+            Button {
+                exitFullScreen()
+            } label: {
+                Image(systemName: "arrow.down.right.and.arrow.up.left").font(.title2)
+            }
+            .help("Exit full screen (Esc)")
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 14)
+        .background(.black.opacity(0.55), in: Capsule())
+        .foregroundStyle(.white)
+        .buttonStyle(.plain)
+    }
+
+    private func enterFullScreen() {
+        isFullScreen = true
+        if let window = NSApp.keyWindow, !window.styleMask.contains(.fullScreen) {
+            window.toggleFullScreen(nil)
+        }
+    }
+
+    private func exitFullScreen() {
+        isFullScreen = false
+        if let window = NSApp.keyWindow, window.styleMask.contains(.fullScreen) {
+            window.toggleFullScreen(nil)
+        }
+    }
+
+    /// Grow the window vertically so all content stays visible (e.g. when the
+    /// video pane is enlarged), capped to the screen. Grow-only, so it never
+    /// fights a manual resize; the ScrollView covers the capped case.
+    private func growWindow(toFitContentHeight contentHeight: CGFloat) {
+        guard contentHeight > 0,
+              let window = NSApp.keyWindow ?? NSApp.windows.first(where: \.isVisible),
+              !window.styleMask.contains(.fullScreen) else { return }
+
+        let chrome = window.frame.height - window.contentLayoutRect.height
+        let maxHeight = (window.screen ?? NSScreen.main)?.visibleFrame.height ?? .greatestFiniteMagnitude
+        let target = min(contentHeight + chrome, maxHeight)
+        guard target > window.frame.height + 1 else { return }
+
+        var frame = window.frame
+        frame.origin.y -= target - frame.height // keep the top-left corner fixed
+        frame.size.height = target
+        window.setFrame(frame, display: true, animate: false)
+    }
+
     // MARK: - Sections
 
     private var transportBar: some View {
@@ -64,9 +231,9 @@ struct ContentView: View {
             Button {
                 player.requestOpen()
             } label: {
-                Label("Open MP3", systemImage: "folder")
+                Label("Open", systemImage: "folder")
             }
-            .help("Open an MP3 file (⌘O)")
+            .help("Open an audio or video file (⌘O)")
 
             Button {
                 player.closeFile()
@@ -121,7 +288,7 @@ struct ContentView: View {
                 loopStart: fraction(player.loopStart),
                 loopEnd: fraction(player.loopEnd),
                 emptyMessage: player.audioFileURL == nil
-                    ? "Drag an MP3 here, or press ⌘O to open one"
+                    ? "Drag an audio or video file here, or press ⌘O to open one"
                     : "Analyzing waveform…",
                 onSeek: { player.seek(to: $0 * player.duration) },
                 onLoopSelect: { start, end in
@@ -298,13 +465,22 @@ struct ContentView: View {
         _ = provider.loadObject(ofClass: URL.self) { url, _ in
             guard let url else { return }
             DispatchQueue.main.async {
-                if url.pathExtension.lowercased() == "mp3" {
+                if FileImporter.supportedExtensions.contains(url.pathExtension.lowercased()) {
                     player.load(url: url)
                 } else {
-                    player.errorMessage = "Please drop an MP3 file."
+                    player.errorMessage = "Please drop a supported audio or video file."
                 }
             }
         }
         return true
+    }
+}
+
+/// Reports the natural height of the main content so the window can grow to
+/// keep everything visible.
+private struct ContentHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }

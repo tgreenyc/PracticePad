@@ -2,9 +2,9 @@
 
 # PracticePad
 
-A macOS app for practicing music by ear. Load an MP3, slow it down without changing the pitch (or shift the pitch without changing the speed), and loop a tricky passage over and over until you've got it.
+A macOS app for practicing music by ear. Load an audio or video file, slow it down without changing the pitch (or shift the pitch without changing the speed), and loop a tricky passage over and over until you've got it. Video files play their picture alongside the same practice controls.
 
-Built with SwiftUI and AVFoundation (`AVAudioEngine` + `AVAudioUnitTimePitch`).
+Built with SwiftUI and AVFoundation (`AVAudioEngine` + `AVAudioUnitTimePitch` for audio; a muted `AVPlayer` slaved to the audio clock for the video picture).
 
 <br clear="left" />
 
@@ -12,20 +12,28 @@ Built with SwiftUI and AVFoundation (`AVAudioEngine` + `AVAudioUnitTimePitch`).
 
 ## Features
 
+- **Audio & video** — open MP3, M4A, WAV, AIFF, MP4, M4V, or MOV. The audio track is played and processed even out of a video container.
+- **Video playback** — video files show the picture in a pane you can resize (drag the handle) or send to full screen; the picture stays in sync with the pitch- and speed-shifted audio.
 - **Speed control** — play from `0.25x` to `2.0x` without affecting pitch, with quick `0.5×` / `0.75×` / `1×` presets.
 - **Pitch control** — shift `-12` to `+12` semitones without affecting speed.
 - **Waveform view** — see the whole track; click to seek.
 - **A-B looping** — gapless looping of a selected region, ideal for drilling a passage.
-- **Drag-and-drop** — drop an MP3 onto the window to load it.
+- **Drag-and-drop** — drop a supported audio or video file onto the window to load it.
 - **Recent files** — reopen previously loaded tracks from the File menu.
-- **Remembers your setup** — speed, pitch, the last file, and its loop are restored on launch.
+- **Remembers your setup** — speed, pitch, the last file, its loop, and the video pane size are restored on launch.
 
 ## Using the app
 
 ### Load a track
-- Click **Open MP3** (⌘O), or drag an MP3 file onto the window.
+- Click **Open** (⌘O), or drag a supported audio/video file onto the window.
 - Reopen something you had before via **File ▸ Open Recent** (with **Clear Menu** to reset the list).
 - **Close** unloads the current track and returns to the empty state.
+
+### Watch video
+- When the file has a video track, its picture appears in a pane above the waveform.
+- **Resize** the pane by dragging the handle beneath it; the window grows to keep the other controls visible.
+- Click the **full-screen button** (top-right of the picture) for a video-only view with minimal controls; press **Esc** (or the exit button) to return.
+- All audio processing — speed, pitch, and A-B looping — applies to video files too. The picture reseeks to A at each loop wrap, so audio stays gapless while the image resyncs.
 
 ### Play and adjust
 - **Play/Pause** with the button or the **spacebar**; **Stop** with the button or ⌘.
@@ -53,10 +61,11 @@ Behavior notes:
 
 | Shortcut | Action |
 | --- | --- |
-| `⌘O` | Open an MP3 |
+| `⌘O` | Open a file |
 | `Space` | Play / Pause |
 | `⌘.` | Stop |
 | `⌘R` | Reset speed & pitch |
+| `Esc` | Exit full-screen video |
 
 > Menus and shortcuts are only available when running the built `.app` (see below) — not via `swift run`.
 
@@ -96,8 +105,9 @@ another Mac you'd need a Developer ID signature and notarization.
 
 - `Package.swift` — Swift package manifest.
 - `Sources/PracticePad/PracticePadApp.swift` — app entry point and menu commands.
-- `Sources/PracticePad/ContentView.swift` — main UI, transport controls, drag-and-drop.
+- `Sources/PracticePad/ContentView.swift` — main UI, transport controls, drag-and-drop, resizable/full-screen video.
 - `Sources/PracticePad/WaveformView.swift` — waveform, seek, and loop handles.
-- `Sources/PracticePad/AudioPlayer.swift` — audio engine, seeking, gapless looping, persistence.
-- `Sources/PracticePad/FileImporter.swift` — MP3 open panel.
+- `Sources/PracticePad/VideoPlayerView.swift` — `AVPlayerLayer`-backed view for the video picture.
+- `Sources/PracticePad/AudioPlayer.swift` — audio engine, seeking, gapless looping, video sync, persistence.
+- `Sources/PracticePad/FileImporter.swift` — open panel and supported audio/video types.
 - `scripts/make_app.sh` — packages the `.app` bundle.

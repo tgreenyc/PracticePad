@@ -7,12 +7,12 @@ struct PracticePadApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView(player: player)
-                .frame(minWidth: 500, minHeight: 620)
+                .frame(minWidth: 500, minHeight: 400)
         }
         .commands {
             // Add a File > Open / Close pair alongside the system items.
             CommandGroup(after: .newItem) {
-                Button("Open MP3…") {
+                Button("Open…") {
                     player.requestOpen()
                 }
                 .keyboardShortcut("o", modifiers: [.command])
