@@ -4,12 +4,54 @@ import SwiftUI
 struct PracticePadApp: App {
     @StateObject private var player = AudioPlayer()
 
+    /// Acknowledgements shown in the About panel. Rubber Band is GPL, so its
+    /// license notice is included here as part of complying with it.
+    private static let aboutCredits: NSAttributedString = {
+        let text = """
+        A macOS app for practicing music by ear.
+
+        Open-source libraries:
+
+        • Rubber Band Library — time-stretching and pitch-shifting.
+          © Breakfast Quay. Distributed under the GNU General Public License (GPL).
+          https://breakfastquay.com/rubberband/
+
+        • libsamplerate — sample-rate conversion used by Rubber Band.
+          © Erik de Castro Lopo. BSD-2-Clause license.
+          https://libsndfile.github.io/libsamplerate/
+
+        Built with SwiftUI and AVFoundation.
+        """
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .center
+        return NSAttributedString(
+            string: text,
+            attributes: [
+                .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize),
+                .paragraphStyle: paragraph
+            ]
+        )
+    }()
+
     var body: some Scene {
         WindowGroup {
             ContentView(player: player)
                 .frame(minWidth: 500, minHeight: 400)
         }
         .commands {
+            // Replace the default About with one that credits the open-source
+            // libraries we build on. Rubber Band is GPL, so surfacing its
+            // license here is part of complying with it.
+            CommandGroup(replacing: .appInfo) {
+                Button("About PracticePad") {
+                    NSApplication.shared.orderFrontStandardAboutPanel(
+                        options: [
+                            .credits: Self.aboutCredits
+                        ]
+                    )
+                }
+            }
+
             // Add a File > Open / Close pair alongside the system items.
             CommandGroup(after: .newItem) {
                 Button("Open…") {

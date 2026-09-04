@@ -15,8 +15,8 @@ set -euo pipefail
 
 APP_NAME="PracticePad"
 BUNDLE_ID="com.shawndaley.PracticePad"
-VERSION="1.0"
-BUILD="1"
+VERSION="1.1"
+BUILD="2"
 
 # Resolve repo root (parent of this script's directory).
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
