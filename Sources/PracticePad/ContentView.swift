@@ -309,6 +309,7 @@ struct ContentView: View {
                 progress: player.duration > 0 ? player.currentTime / player.duration : 0,
                 loopStart: fraction(player.loopStart),
                 loopEnd: fraction(player.loopEnd),
+                regions: savedLoopRegions,
                 emptyMessage: player.audioFileURL == nil
                     ? "Drag an audio or video file here, or press ⌘O to open one"
                     : "Analyzing waveform…",
@@ -601,10 +602,13 @@ struct ContentView: View {
 
             Divider()
 
-            // Balance on the right, taking the other half.
+            // Balance on the right, taking the other half. The label stays at
+            // the top (aligned with "Equalizer"); the picker is centered in the
+            // space below it via spacers above and below.
             VStack(alignment: .leading, spacing: 8) {
                 Text("Balance")
                     .font(.subheadline).bold()
+                Spacer(minLength: 0)
                 Picker("Balance", selection: $player.channelMode) {
                     ForEach(ChannelMode.allCases) { mode in
                         Text(Self.channelModeLabel(mode)).tag(mode)
@@ -673,6 +677,19 @@ struct ContentView: View {
     private func fraction(_ time: TimeInterval?) -> Double? {
         guard let time, player.duration > 0 else { return nil }
         return time / player.duration
+    }
+
+    /// The saved loops as fraction-based bands for the waveform.
+    private var savedLoopRegions: [WaveformRegion] {
+        guard player.duration > 0 else { return [] }
+        return player.savedLoops.map {
+            WaveformRegion(
+                id: $0.id,
+                name: $0.name,
+                start: $0.start / player.duration,
+                end: $0.end / player.duration
+            )
+        }
     }
 
     /// EQ band geometry: `eqTrackLength` is each (vertical) slider's visual

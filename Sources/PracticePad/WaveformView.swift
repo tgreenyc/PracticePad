@@ -4,11 +4,22 @@ import SwiftUI
 /// range to define the A-B loop region, or drag the A/B handles to fine-tune
 /// an existing region. All positions are expressed as fractions of the track
 /// duration (0...1).
+/// A saved loop region to draw as a faint labeled band, in fractions (0...1)
+/// of the track duration.
+struct WaveformRegion: Identifiable {
+    let id: UUID
+    let name: String
+    let start: Double
+    let end: Double
+}
+
 struct WaveformView: View {
     let samples: [Float]
     let progress: Double
     let loopStart: Double?
     let loopEnd: Double?
+    /// Saved loops to show as faint labeled bands beneath the active highlight.
+    var regions: [WaveformRegion] = []
     /// Shown when there are no samples yet (no file, or still analyzing).
     let emptyMessage: String
     /// Fired on a click (a drag that barely moved) with the target fraction.
@@ -64,6 +75,7 @@ struct WaveformView: View {
         ZStack(alignment: .leading) {
             Color(nsColor: .textBackgroundColor)
 
+            savedRegionBands(width: width, height: height)
             loopHighlight(width: width, height: height)
             dragPreview(height: height)
 
@@ -82,6 +94,44 @@ struct WaveformView: View {
                 .fill(Color.primary)
                 .frame(width: 1.5, height: height)
                 .offset(x: CGFloat(progress) * width)
+        }
+    }
+
+    /// Bands for saved loops, each with its name at the top-left. Uses a
+    /// lighter version of the active loop's yellow so saved regions read in the
+    /// same visual language while the active (brighter) A–B highlight, drawn on
+    /// top, stays dominant. Names are dark red for contrast against the fill.
+    @ViewBuilder
+    private func savedRegionBands(width: CGFloat, height: CGFloat) -> some View {
+        ForEach(regions) { region in
+            let x = CGFloat(min(max(0, region.start), 1)) * width
+            let w = CGFloat(min(max(0, region.end - region.start), 1)) * width
+            ZStack(alignment: .topLeading) {
+                Rectangle()
+                    .fill(Color.yellow.opacity(0.15))
+                    .overlay(alignment: .leading) {
+                        Rectangle().fill(Color.yellow.opacity(0.6)).frame(width: 1)
+                    }
+                    .overlay(alignment: .trailing) {
+                        Rectangle().fill(Color.yellow.opacity(0.6)).frame(width: 1)
+                    }
+                Text(region.name)
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(Color(red: 0.55, green: 0.0, blue: 0.0))
+                    .lineLimit(1)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 1)
+                    .background(
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(Color.white.opacity(0.85))
+                    )
+                    .padding(.horizontal, 2)
+                    .padding(.top, 2)
+            }
+            .frame(width: max(w, 1), height: height, alignment: .topLeading)
+            .clipped()
+            .offset(x: x)
+            .allowsHitTesting(false)
         }
     }
 
