@@ -277,27 +277,18 @@ final class AudioPlayer: ObservableObject {
         writeSavedLoopStore(map)
     }
 
-    /// Load the saved loops for `url` into `savedLoops`, migrating a legacy
-    /// single-loop entry if present and no list exists yet. Returns nothing;
-    /// updates the published property.
+    /// Load the saved loops for `url` into `savedLoops`. Read-only: the store
+    /// is the single source of truth. Loops are clamped to the file's duration
+    /// and any that fall out of range are dropped.
     private func loadSavedLoops(for url: URL, duration: TimeInterval) {
-        var map = loadSavedLoopStore()
-        var list = (map[url.path] ?? []).filter { $0.end > $0.start }
-
-        // One-time migration: if there's no saved-loop list for this file but a
-        // legacy single A–B loop exists for it, seed the list with it.
-        if list.isEmpty, let legacy = savedLoop(for: url, duration: duration) {
-            list = [SavedLoop(name: "Loop 1", start: legacy.start, end: legacy.end)]
-            map[url.path] = list
-            writeSavedLoopStore(map)
-        }
-
-        // Clamp any loops that exceed this file's duration.
+        let map = loadSavedLoopStore()
+        let list = map[url.path] ?? []
         savedLoops = list.map { loop in
             var l = loop
             l.end = min(l.end, duration)
             return l
-        }.filter { $0.end > $0.start }
+        }
+        .filter { $0.end > $0.start }
         .sorted { $0.start < $1.start }
     }
 
@@ -353,10 +344,9 @@ final class AudioPlayer: ObservableObject {
             engine.setChannelMode(channelMode)
             applyAllEQGains()
 
-            // Grab any saved loop for this exact file before clearing state.
-            // Both this and the saved-loops migration read the legacy keys,
-            // which are keyed against `lastFileKey` — so do them before that
-            // key is overwritten below.
+            // Restore the last active A–B loop for this file (keyed against
+            // `lastFileKey`) before that key is overwritten below, then load
+            // this file's saved-loops list from the store.
             let restoredLoop = savedLoop(for: url, duration: duration)
             loadSavedLoops(for: url, duration: duration)
 

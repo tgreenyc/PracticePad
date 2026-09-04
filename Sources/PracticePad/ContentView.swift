@@ -337,58 +337,137 @@ struct ContentView: View {
     }
 
     private var loopSection: some View {
-        HStack(alignment: .top, spacing: 16) {
-            loopPointButton(
-                title: "Set A",
-                systemImage: "a.circle",
-                time: player.loopStart,
-                action: player.markLoopStart
-            )
-            loopPointButton(
-                title: "Set B",
-                systemImage: "b.circle",
-                time: player.loopEnd,
-                action: player.markLoopEnd
-            )
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                loopControlButton(
+                    title: "Set A",
+                    systemImage: "a.circle",
+                    time: player.loopStart,
+                    showsTime: true,
+                    action: player.markLoopStart
+                )
+                loopControlButton(
+                    title: "Set B",
+                    systemImage: "b.circle",
+                    time: player.loopEnd,
+                    showsTime: true,
+                    action: player.markLoopEnd
+                )
+                loopControlButton(
+                    title: "Save",
+                    systemImage: "plus.circle",
+                    disabled: !player.isLoopValid,
+                    help: "Save the current A–B region as a named loop",
+                    action: player.saveCurrentLoop
+                )
+                loopControlButton(
+                    title: "Go to A",
+                    systemImage: "backward.end.fill",
+                    disabled: !player.canJumpToLoopStart,
+                    help: "Jump to the loop start (Delete)",
+                    action: player.jumpToLoopStart
+                )
 
-            Toggle("Loop", isOn: Binding(
-                get: { player.loopEnabled },
-                set: { player.setLoopEnabled($0) }
-            ))
-            .toggleStyle(.switch)
-            .tint(.yellow)
-            .disabled(!player.isLoopValid)
+                Toggle("Loop", isOn: Binding(
+                    get: { player.loopEnabled },
+                    set: { player.setLoopEnabled($0) }
+                ))
+                .toggleStyle(.switch)
+                .tint(.yellow)
+                .disabled(!player.isLoopValid)
 
-            Button {
-                player.jumpToLoopStart()
-            } label: {
-                Label("Go to A", systemImage: "backward.end.fill")
+                Spacer()
+
+                Button("Clear") { player.clearLoop() }
+                    .disabled(player.loopStart == nil && player.loopEnd == nil)
             }
-            .controlSize(.small)
-            .disabled(!player.canJumpToLoopStart)
-            .help("Jump to the loop start (Delete)")
 
-            Spacer()
-
-            Button("Clear") { player.clearLoop() }
-                .disabled(player.loopStart == nil && player.loopEnd == nil)
+            if !player.savedLoops.isEmpty {
+                savedLoopsList
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(4)
         .disabled(player.audioFileURL == nil)
     }
 
-    private func loopPointButton(
+    /// List of saved loops for the current track: click a row to recall it,
+    /// double-click the name to rename, and use the trash button to delete.
+    private var savedLoopsList: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Divider()
+            Text("Saved Loops")
+                .font(.caption).bold()
+                .foregroundStyle(.secondary)
+
+            ForEach(player.savedLoops) { loop in
+                HStack(spacing: 8) {
+                    // Recall affordance (kept separate from the name field so
+                    // clicking the name to rename doesn't also recall).
+                    Button {
+                        player.recallLoop(loop)
+                    } label: {
+                        Image(systemName: "arrow.uturn.left.circle")
+                            .foregroundStyle(.yellow)
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Recall this loop (jump to its start and loop it)")
+
+                    // Inline-editable name.
+                    TextField("Name", text: Binding(
+                        get: { loop.name },
+                        set: { player.renameLoop(id: loop.id, to: $0) }
+                    ))
+                    .textFieldStyle(.plain)
+                    .frame(maxWidth: 160, alignment: .leading)
+
+                    Spacer(minLength: 8)
+
+                    Text("\(Self.timeString(loop.start)) – \(Self.timeString(loop.end))")
+                        .font(.caption)
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+
+                    Button {
+                        player.deleteLoop(id: loop.id)
+                    } label: {
+                        Image(systemName: "trash")
+                    }
+                    .buttonStyle(.borderless)
+                    .controlSize(.small)
+                    .help("Delete this loop")
+                }
+                .padding(.vertical, 2)
+            }
+        }
+    }
+
+    /// Width every loop control button shares, so Set A / Set B / Save / Go to
+    /// A line up uniformly.
+    private static let loopButtonWidth: CGFloat = 96
+
+    /// A uniform loop-control button. All four buttons use this so they're the
+    /// same size; the caption line is always reserved (showing a time, or a
+    /// space) so their heights match whether or not they carry a subtitle.
+    private func loopControlButton(
         title: String,
         systemImage: String,
-        time: TimeInterval?,
+        time: TimeInterval? = nil,
+        showsTime: Bool = false,
+        disabled: Bool = false,
+        help: String? = nil,
         action: @escaping () -> Void
     ) -> some View {
         VStack(spacing: 4) {
             Button(action: action) {
                 Label(title, systemImage: systemImage)
+                    .frame(maxWidth: .infinity)
             }
-            Text(time.map(Self.timeString) ?? "—")
+            .frame(width: Self.loopButtonWidth)
+            .disabled(disabled)
+            .help(help ?? "")
+
+            Text(showsTime ? (time.map(Self.timeString) ?? "—") : " ")
                 .font(.caption)
                 .monospacedDigit()
                 .foregroundColor(.secondary)
