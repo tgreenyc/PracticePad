@@ -4,13 +4,13 @@
 # Produces dist/PracticePad.app from a release build, with an Info.plist and an
 # ad-hoc code signature so it launches from Finder / Applications.
 #
-# Building requires the Rubber Band library (brew install rubberband). The
-# script then bundles Rubber Band and its non-system dependencies into
-# Contents/Frameworks and rewrites their load paths to @rpath, so the finished
-# .app is self-contained and runs on Macs without Homebrew installed.
+# Building requires the Rubber Band library (brew install rubberband). Rubber
+# Band and libsamplerate are linked statically into the executable (see
+# Package.swift), so the finished .app is self-contained and runs on Macs
+# without Homebrew installed -- there are no dylibs to bundle.
 #
-# Note: Rubber Band is GPL. Redistributing a build that bundles it must comply
-# with the GPL (or use a commercial Rubber Band license).
+# Note: Rubber Band is GPL. Redistributing a build that includes it (statically
+# linked here) must comply with the GPL (or use a commercial Rubber Band license).
 set -euo pipefail
 
 APP_NAME="PracticePad"
@@ -72,140 +72,24 @@ $ICON_PLIST
 </plist>
 PLIST
 
-# ---------------------------------------------------------------------------
-# Bundle third-party dylibs (Rubber Band + its dependencies) so the app is
-# self-contained and doesn't require Homebrew at runtime.
-#
-# The built binary links librubberband by its absolute Homebrew path; that (and
-# everything it transitively pulls in, minus system libraries) is copied into
-# Contents/Frameworks and every load command / install name is rewritten to
-# @rpath. An LC_RPATH of @executable_path/../Frameworks is added to the binary
-# so the loader finds them inside the bundle.
-# ---------------------------------------------------------------------------
 BIN="$APP/Contents/MacOS/$APP_NAME"
-FRAMEWORKS="$APP/Contents/Frameworks"
-mkdir -p "$FRAMEWORKS"
 
-# A dylib path is "system" (left untouched) if it lives under /usr/lib or
-# /System. Everything else (Homebrew, /opt, /usr/local, ...) gets bundled.
-is_system_lib() {
-    case "$1" in
-        /usr/lib/*|/System/*) return 0 ;;
-        *) return 1 ;;
-    esac
-}
-
-# Resolve symlinks to the real file (macOS /bin/bash lacks `realpath`).
-real_path() {
-    /usr/bin/python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$1"
-}
-
-# List a Mach-O file's linked dylibs, skipping its own id (line 1).
-linked_dylibs() {
-    otool -L "$1" | tail -n +2 | awk '{print $1}'
-}
-
-# Recursively collect the set of non-system dylibs reachable from a Mach-O
-# file into the newline-separated global COLLECTED (real paths, de-duplicated).
-# Uses plain string membership tests so it works on bash 3.2 (no assoc arrays).
-COLLECTED=""
-collect_deps() {
-    local target="$1" dep real
-    while read -r dep; do
-        [[ -z "$dep" ]] && continue
-        is_system_lib "$dep" && continue
-        real="$(real_path "$dep" 2>/dev/null || echo "$dep")"
-        [[ -f "$real" ]] || continue
-        # Skip if already collected.
-        case "
-$COLLECTED
-" in
-            *"
-$real
-"*) continue ;;
-        esac
-        COLLECTED="$COLLECTED$real
-"
-        collect_deps "$real"
-    done < <(linked_dylibs "$target")
-}
-
-echo "Collecting bundled libraries..."
-collect_deps "$BIN"
-
-if [[ -z "${COLLECTED//[[:space:]]/}" ]]; then
-    echo "No third-party dylibs to bundle (binary already self-contained)."
-else
-    # Copy each library into Frameworks and set its own id to @rpath/<name>.
-    while IFS= read -r real; do
-        [[ -z "$real" ]] && continue
-        base="$(basename "$real")"
-        echo "  bundling $base"
-        cp "$real" "$FRAMEWORKS/$base"
-        chmod u+w "$FRAMEWORKS/$base"
-        install_name_tool -id "@rpath/$base" "$FRAMEWORKS/$base"
-    done <<< "$COLLECTED"
-
-    # Rewrite the main binary's references to @rpath and add an rpath that
-    # resolves to the bundle's Frameworks directory. The binary may reference a
-    # library by its real path, a symlinked path, or a Homebrew "opt" path, so
-    # rewrite whatever it actually records for any bundled basename.
-    while read -r ref; do
-        [[ "$ref" == "@rpath/"* ]] && continue
-        is_system_lib "$ref" && continue
-        refreal="$(real_path "$ref" 2>/dev/null || echo "$ref")"
-        while IFS= read -r real; do
-            [[ -z "$real" ]] && continue
-            if [[ "$real" == "$refreal" ]]; then
-                install_name_tool -change "$ref" "@rpath/$(basename "$real")" "$BIN"
-            fi
-        done <<< "$COLLECTED"
-    done < <(linked_dylibs "$BIN")
-    install_name_tool -add_rpath "@executable_path/../Frameworks" "$BIN" 2>/dev/null || true
-
-    # Fix up cross-references *between* the bundled libraries (e.g. rubberband
-    # -> libsamplerate) so those also resolve inside the bundle. A reference may
-    # use a symlinked "opt" path (e.g. libsamplerate.0.dylib) whose basename
-    # differs from the real versioned file we bundled (libsamplerate.0.2.2.dylib),
-    # so match by resolving each reference to its real path.
-    while IFS= read -r real; do
-        [[ -z "$real" ]] && continue
-        lib="$FRAMEWORKS/$(basename "$real")"
-        while read -r ref; do
-            [[ "$ref" == "@rpath/"* ]] && continue
-            is_system_lib "$ref" && continue
-            refreal="$(real_path "$ref" 2>/dev/null || echo "$ref")"
-            while IFS= read -r other; do
-                [[ -z "$other" ]] && continue
-                if [[ "$other" == "$refreal" ]]; then
-                    install_name_tool -change "$ref" "@rpath/$(basename "$other")" "$lib"
-                fi
-            done <<< "$COLLECTED"
-        done < <(linked_dylibs "$lib")
-    done <<< "$COLLECTED"
-fi
-
-# Ad-hoc sign. Signatures must be applied to the bundled dylibs *before* the
-# app, since editing load commands invalidated any existing signature and the
-# outer signature seals the nested code.
+# Rubber Band and libsamplerate are linked statically into the binary (see
+# Package.swift), so there are no third-party dylibs to bundle or relocate --
+# a single ad-hoc signature on the app is all that's needed.
 echo "Ad-hoc signing..."
-if [[ -d "$FRAMEWORKS" ]]; then
-    for lib in "$FRAMEWORKS"/*.dylib; do
-        [[ -e "$lib" ]] || continue
-        codesign --force --sign - "$lib"
-    done
-fi
-codesign --force --sign - "$BIN"
 codesign --force --sign - "$APP"
 
-echo "Verifying bundle is self-contained (no /opt or /usr/local references)..."
-LEAKS="$( { otool -L "$BIN"; for lib in "$FRAMEWORKS"/*.dylib; do [[ -e "$lib" ]] && otool -L "$lib"; done; } \
-    | awk '{print $1}' | grep -E '^(/opt/|/usr/local/)' || true )"
+# Sanity check: the finished binary must reference only system libraries. Any
+# /opt or /usr/local reference would mean a dependency leaked in dynamically
+# and the app would fail to launch on a Mac without Homebrew.
+echo "Verifying the app is self-contained (no /opt or /usr/local references)..."
+LEAKS="$(otool -L "$BIN" | awk '{print $1}' | grep -E '^(/opt/|/usr/local/)' || true)"
 if [[ -n "$LEAKS" ]]; then
-    echo "WARNING: bundle still references non-system paths:" >&2
+    echo "WARNING: binary still references non-system paths:" >&2
     echo "$LEAKS" >&2
 else
-    echo "OK: no Homebrew/local paths remain."
+    echo "OK: only system libraries are referenced."
 fi
 
 echo "Done: $ROOT/$APP"

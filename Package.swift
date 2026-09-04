@@ -2,10 +2,12 @@
 import PackageDescription
 import Foundation
 
-// Rubber Band is provided as a system library (install with:
-// `brew install rubberband`). Homebrew lives at /opt/homebrew on Apple Silicon
-// and /usr/local on Intel; pick whichever exists so the include/link flags
-// point at the right place.
+// Rubber Band is needed only to *build* (install with: `brew install
+// rubberband`). We link its STATIC archive (and libsamplerate's) directly into
+// the executable, so the shipped app has no Rubber Band dylib to bundle.
+//
+// Homebrew lives at /opt/homebrew on Apple Silicon and /usr/local on Intel.
+// The "opt/<formula>/lib" paths are stable symlinks maintained by Homebrew.
 let brewPrefix: String = {
     for candidate in ["/opt/homebrew", "/usr/local"] {
         if FileManager.default.fileExists(atPath: candidate + "/include/rubberband/rubberband-c.h") {
@@ -14,6 +16,9 @@ let brewPrefix: String = {
     }
     return "/opt/homebrew"
 }()
+
+let rubberbandLib = "\(brewPrefix)/opt/rubberband/lib/librubberband.a"
+let samplerateLib = "\(brewPrefix)/opt/libsamplerate/lib/libsamplerate.a"
 
 let package = Package(
     name: "PracticePad",
@@ -41,7 +46,19 @@ let package = Package(
                 .unsafeFlags(["-I\(brewPrefix)/include"])
             ],
             linkerSettings: [
-                .unsafeFlags(["-L\(brewPrefix)/lib"])
+                // Link the static archives by full path (NOT `-lrubberband`,
+                // which would pull in the .dylib). Rubber Band uses Apple's
+                // Accelerate framework for FFT/vDSP; libc++ is added by the
+                // toolchain automatically since the archives are C++.
+                .unsafeFlags([
+                    rubberbandLib,
+                    samplerateLib,
+                    "-framework", "Accelerate",
+                    // Rubber Band is C++, so its archive needs the C++ runtime.
+                    // Swift links through the C driver, which doesn't add this
+                    // automatically; libc++ itself stays dynamic (system lib).
+                    "-lc++"
+                ])
             ]
         )
     ]

@@ -1,10 +1,11 @@
 // Exposes Rubber Band Library's C API (rubberband-c.h) to Swift as the
-// `CRubberBand` module. The actual library is provided by the system
-// (installed via Homebrew: `brew install rubberband`); this target only
-// carries the module map. Include and link flags are supplied by the
-// PracticePad target in Package.swift.
+// `CRubberBand` module. This target carries only the module map / header.
+//
+// Note: intentionally NO `link "rubberband"` directive here. That would emit
+// `-lrubberband`, which the linker resolves to the dynamic library. Instead the
+// PracticePad target links the *static* archives (librubberband.a +
+// libsamplerate.a) by full path in Package.swift, so nothing needs bundling.
 module CRubberBand {
     header "shim.h"
-    link "rubberband"
     export *
 }

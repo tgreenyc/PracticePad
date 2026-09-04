@@ -6,7 +6,7 @@ A macOS app for practicing music by ear. Load an audio or video file, slow it do
 
 Built with SwiftUI and AVFoundation. Time-stretching and pitch-shifting are done by the [Rubber Band Library](https://breakfastquay.com/rubberband/): the decoded track is pulled through a `RubberBandStretcher` (real-time mode, R3 "finer" engine) inside an `AVAudioSourceNode`, then out through `AVAudioEngine`. A muted `AVPlayer`, slaved to the audio clock, provides the video picture.
 
-> **Dependency & license note:** Rubber Band is required to *build* (install it with `brew install rubberband`; the build reads its headers/library from the Homebrew prefix — `/opt/homebrew` on Apple Silicon, `/usr/local` on Intel). The packaged `.app` bundles Rubber Band and its dependencies, so running it does **not** require Homebrew. Rubber Band is distributed under the **GNU General Public License (GPL)**; bundling it means a distributed build of PracticePad is subject to the GPL unless you obtain a commercial Rubber Band license from Breakfast Quay.
+> **Dependency & license note:** Rubber Band is required to *build* (install it with `brew install rubberband`; the build reads its headers and static library from the Homebrew prefix — `/opt/homebrew` on Apple Silicon, `/usr/local` on Intel). Rubber Band and its dependency libsamplerate are linked **statically** into the executable, so the built app does **not** require Homebrew to run — there are no dylibs to bundle. Rubber Band is distributed under the **GNU General Public License (GPL)**; linking it (statically or otherwise) means a distributed build of PracticePad is subject to the GPL unless you obtain a commercial Rubber Band license from Breakfast Quay.
 
 <br clear="left" />
 
@@ -105,15 +105,16 @@ This creates `dist/PracticePad.app`. Install it by dragging it into `/Applicatio
 cp -R dist/PracticePad.app /Applications/
 ```
 
-The script bundles Rubber Band and its dependencies into
-`Contents/Frameworks` and rewrites their load paths to `@rpath`, so the
-finished `.app` is **self-contained** — it runs on Macs that don't have Homebrew
-or Rubber Band installed. (Homebrew's `rubberband` is still needed to *build*.)
+Because Rubber Band and libsamplerate are linked **statically** into the
+executable (see `Package.swift`), the finished `.app` is **self-contained** — it
+runs on Macs that don't have Homebrew or Rubber Band installed, and there's no
+`Contents/Frameworks` to manage. (Homebrew's `rubberband` is still needed to
+*build*.)
 
-The bundle is ad-hoc signed, which is fine for your own machine. To distribute
+The app is ad-hoc signed, which is fine for your own machine. To distribute
 it to other Macs without Gatekeeper warnings you'd add a Developer ID signature
-and notarization — and, because the bundled Rubber Band is GPL, comply with the
-GPL (or use a commercial Rubber Band license).
+and notarization — and, because Rubber Band is GPL, comply with the GPL (or use
+a commercial Rubber Band license).
 
 ## Project layout
 
@@ -124,6 +125,6 @@ GPL (or use a commercial Rubber Band license).
 - `Sources/PracticePad/VideoPlayerView.swift` — `AVPlayerLayer`-backed view for the video picture.
 - `Sources/PracticePad/AudioPlayer.swift` — transport, seeking, A-B looping, video sync, persistence; drives the Rubber Band engine.
 - `Sources/PracticePad/RubberBandEngine.swift` — `AVAudioSourceNode` pull loop feeding decoded audio through Rubber Band.
-- `Sources/CRubberBand/` — module map exposing Rubber Band's C API (`rubberband-c.h`) to Swift.
+- `Sources/CRubberBand/` — module map exposing Rubber Band's C API (`rubberband-c.h`) to Swift; the static archives are linked by `Package.swift`.
 - `Sources/PracticePad/FileImporter.swift` — open panel and supported audio/video types.
 - `scripts/make_app.sh` — packages the `.app` bundle.
