@@ -7,9 +7,13 @@ struct ContentView: View {
     @State private var isDropTargeted = false
     @State private var isFullScreen = false
     @State private var dragStartHeight: Double?
-    /// Which saved-loop name field (if any) is currently focused, mirrored into
-    /// `player.isEditingText` so plain-key shortcuts pause while typing.
-    @FocusState private var editingLoopID: SavedLoop.ID?
+    /// Which saved loop is in edit mode (its name field is shown). Plain
+    /// `@State` so it can be set before the field exists; focus is applied
+    /// separately via `focusedLoopID`.
+    @State private var editingLoopID: SavedLoop.ID?
+    /// Focus binding for the visible name field. Kept separate from
+    /// `editingLoopID` so we can render the field first, then focus it.
+    @FocusState private var focusedLoopID: SavedLoop.ID?
     /// The name field that previously held focus, so we can finalize its name
     /// when focus moves away.
     @State private var previousEditingLoopID: SavedLoop.ID?
@@ -29,15 +33,15 @@ struct ContentView: View {
         .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
             handleDrop(providers)
         }
-        .onChange(of: editingLoopID) { newValue in
+        .onChange(of: focusedLoopID) { newValue in
             // Mirror text-field focus into the player so the App's plain-key
             // Playback shortcuts pause while a loop name is being edited.
             player.isEditingText = (newValue != nil)
             // When focus leaves a name field, finalize that loop's name (apply
-            // the no-blank fallback). `previousEditingLoopID` holds the field
-            // that just lost focus.
+            // the no-blank fallback) and collapse it back to read-only.
             if let previous = previousEditingLoopID, previous != newValue {
                 player.commitLoopName(id: previous)
+                if editingLoopID == previous { editingLoopID = nil }
             }
             previousEditingLoopID = newValue
         }
@@ -58,13 +62,21 @@ struct ContentView: View {
         }
     }
 
+    /// Transparent layer behind the content that, only while a loop name is
+    /// being edited, commits and dismisses the edit on any click outside the
+    /// field. Inert otherwise so it never blocks normal interaction.
+    @ViewBuilder
+    private var editDismissLayer: some View {
+        if focusedLoopID != nil {
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture { focusedLoopID = nil }
+        }
+    }
+
     private var mainLayout: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Text("PracticePad")
-                    .font(.title)
-                    .bold()
-
                 transportBar
 
                 statusLine
@@ -97,6 +109,7 @@ struct ContentView: View {
             }
             .padding(20)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .background(editDismissLayer)
             .background(GeometryReader { geo in
                 Color.clear.preference(key: ContentHeightKey.self, value: geo.size.height)
             })
@@ -435,7 +448,11 @@ struct ContentView: View {
                     // Edit gate: the name is read-only until you click the
                     // pencil, so it can't be changed by accident.
                     Button {
+                        // Show the field first, then focus it on the next
+                        // runloop tick (you can't focus a view that isn't in
+                        // the hierarchy yet).
                         editingLoopID = loop.id
+                        DispatchQueue.main.async { focusedLoopID = loop.id }
                     } label: {
                         Image(systemName: "pencil")
                     }
@@ -452,10 +469,11 @@ struct ContentView: View {
                         ))
                         .textFieldStyle(.roundedBorder)
                         .frame(maxWidth: 160, alignment: .leading)
-                        .focused($editingLoopID, equals: loop.id)
+                        .focused($focusedLoopID, equals: loop.id)
                         .onSubmit {
                             player.commitLoopName(id: loop.id)
                             editingLoopID = nil
+                            focusedLoopID = nil
                         }
                     } else {
                         Text(loop.name)
