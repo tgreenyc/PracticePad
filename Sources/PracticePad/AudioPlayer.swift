@@ -13,6 +13,10 @@ final class AudioPlayer: ObservableObject {
     /// Named A–B regions saved for the currently loaded file, in time order.
     /// Recalling one loads its bounds into the active loop above.
     @Published private(set) var savedLoops: [SavedLoop] = []
+    /// True while the user is editing a text field (e.g. renaming a loop).
+    /// Playback menu shortcuts that use plain keys (Space, Delete, arrows) are
+    /// disabled while this is set, so typing doesn't trigger them.
+    @Published var isEditingText = false
     /// Normalized (0...1) peak amplitudes, one per horizontal bucket, for
     /// drawing the waveform. Empty until extraction finishes.
     @Published private(set) var waveform: [Float] = []
@@ -308,11 +312,22 @@ final class AudioPlayer: ObservableObject {
         jumpToLoopStart()
     }
 
-    /// Rename a saved loop.
+    /// Rename a saved loop as the user types. Stores the value verbatim —
+    /// including a temporarily empty string mid-edit — so the field never
+    /// fights the user. The blank-name rule is applied on commit, see
+    /// `commitLoopName(id:)`.
     func renameLoop(id: SavedLoop.ID, to newName: String) {
         guard let i = savedLoops.firstIndex(where: { $0.id == id }) else { return }
-        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
-        savedLoops[i].name = trimmed.isEmpty ? savedLoops[i].name : trimmed
+        savedLoops[i].name = newName
+        persistSavedLoops()
+    }
+
+    /// Finalize a loop name when editing ends: if it was left blank, fall back
+    /// to a default so no loop is nameless.
+    func commitLoopName(id: SavedLoop.ID) {
+        guard let i = savedLoops.firstIndex(where: { $0.id == id }) else { return }
+        let trimmed = savedLoops[i].name.trimmingCharacters(in: .whitespacesAndNewlines)
+        savedLoops[i].name = trimmed.isEmpty ? "Loop \(i + 1)" : trimmed
         persistSavedLoops()
     }
 

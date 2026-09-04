@@ -85,11 +85,14 @@ struct PracticePadApp: App {
             // Menu commands dispatch their key equivalents regardless of which
             // control has focus, so the spacebar works anywhere in the window.
             CommandMenu("Playback") {
+                // These use plain (unmodified) keys, so they're disabled while
+                // a text field is focused — otherwise Space/Delete/arrows would
+                // fire transport commands instead of editing the text.
                 Button(player.isPlaying ? "Pause" : "Play") {
                     player.togglePlayPause()
                 }
                 .keyboardShortcut(.space, modifiers: [])
-                .disabled(player.audioFileURL == nil)
+                .disabled(player.audioFileURL == nil || player.isEditingText)
 
                 Button("Stop") {
                     player.stop()
@@ -101,19 +104,19 @@ struct PracticePadApp: App {
                     player.jumpToLoopStart()
                 }
                 .keyboardShortcut(.delete, modifiers: [])
-                .disabled(!player.canJumpToLoopStart)
+                .disabled(!player.canJumpToLoopStart || player.isEditingText)
 
                 Button("Skip Back 1 Second") {
                     player.skip(by: -AudioPlayer.skipInterval)
                 }
                 .keyboardShortcut(.leftArrow, modifiers: [])
-                .disabled(player.audioFileURL == nil)
+                .disabled(player.audioFileURL == nil || player.isEditingText)
 
                 Button("Skip Forward 1 Second") {
                     player.skip(by: AudioPlayer.skipInterval)
                 }
                 .keyboardShortcut(.rightArrow, modifiers: [])
-                .disabled(player.audioFileURL == nil)
+                .disabled(player.audioFileURL == nil || player.isEditingText)
 
                 Divider()
 

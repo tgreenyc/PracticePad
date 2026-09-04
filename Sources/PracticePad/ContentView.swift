@@ -7,6 +7,12 @@ struct ContentView: View {
     @State private var isDropTargeted = false
     @State private var isFullScreen = false
     @State private var dragStartHeight: Double?
+    /// Which saved-loop name field (if any) is currently focused, mirrored into
+    /// `player.isEditingText` so plain-key shortcuts pause while typing.
+    @FocusState private var editingLoopID: SavedLoop.ID?
+    /// The name field that previously held focus, so we can finalize its name
+    /// when focus moves away.
+    @State private var previousEditingLoopID: SavedLoop.ID?
     @AppStorage("PracticePad.videoHeight") private var videoHeight: Double = 240
 
     private static let minVideoHeight: Double = 120
@@ -22,6 +28,18 @@ struct ContentView: View {
         }
         .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
             handleDrop(providers)
+        }
+        .onChange(of: editingLoopID) { newValue in
+            // Mirror text-field focus into the player so the App's plain-key
+            // Playback shortcuts pause while a loop name is being edited.
+            player.isEditingText = (newValue != nil)
+            // When focus leaves a name field, finalize that loop's name (apply
+            // the no-blank fallback). `previousEditingLoopID` holds the field
+            // that just lost focus.
+            if let previous = previousEditingLoopID, previous != newValue {
+                player.commitLoopName(id: previous)
+            }
+            previousEditingLoopID = newValue
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { _ in
             // Keep our state in sync if the user leaves OS full screen via the
@@ -413,13 +431,20 @@ struct ContentView: View {
                     .buttonStyle(.borderless)
                     .help("Recall this loop (jump to its start and loop it)")
 
-                    // Inline-editable name.
+                    // Inline-editable name. Focusing it pauses plain-key
+                    // shortcuts (see onChange below) so Delete/Space/arrows edit
+                    // the text instead of triggering transport commands.
                     TextField("Name", text: Binding(
                         get: { loop.name },
                         set: { player.renameLoop(id: loop.id, to: $0) }
                     ))
                     .textFieldStyle(.plain)
                     .frame(maxWidth: 160, alignment: .leading)
+                    .focused($editingLoopID, equals: loop.id)
+                    .onSubmit {
+                        player.commitLoopName(id: loop.id)
+                        editingLoopID = nil
+                    }
 
                     Spacer(minLength: 8)
 
