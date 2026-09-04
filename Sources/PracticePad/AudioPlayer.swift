@@ -29,13 +29,17 @@ final class AudioPlayer: ObservableObject {
     }
     @Published var rate: Double = 1.0 {
         didSet {
+            // Apply live (cheap), but don't persist here — writing to
+            // UserDefaults on every slider tick during a drag is what makes the
+            // control sluggish. Persistence happens in `persistRate()`, called
+            // when a drag ends or a preset button is tapped.
+            //
             // Rubber Band's time ratio is output/input duration: to play at
             // `rate`× speed the track must be *shortened*, i.e. ratio = 1/rate.
             engine.setTimeRatio(1.0 / rate)
             // Match the picture's playback rate so it stays in step; pitch shift
             // doesn't alter timing, so the video ignores it.
             videoPlayer?.rate = isPlaying ? Float(rate) : 0
-            UserDefaults.standard.set(rate, forKey: Self.rateKey)
         }
     }
     @Published var pitchSemitones: Int = 0 {
@@ -146,13 +150,28 @@ final class AudioPlayer: ObservableObject {
         restoreLastSession()
     }
 
-    /// Set one EQ band's gain (dB), updating the engine and persisting.
+    /// Set one EQ band's gain (dB), updating the engine live. Does NOT persist
+    /// — call `persistEQGains()` when a drag ends. This keeps dragging
+    /// responsive: applying the gain to the EQ node is cheap, but writing the
+    /// whole array to UserDefaults on every slider tick is not.
     func setEQGain(band index: Int, dB: Double) {
         guard index >= 0, index < eqGains.count else { return }
         let clamped = min(max(dB, Self.eqGainRange.lowerBound), Self.eqGainRange.upperBound)
+        guard eqGains[index] != clamped else { return }
         eqGains[index] = clamped
         engine.setEQGain(band: index, dB: Float(clamped))
+    }
+
+    /// Persist the current EQ gains. Call once when an adjustment settles
+    /// (e.g. a slider drag ends), not on every intermediate value.
+    func persistEQGains() {
         UserDefaults.standard.set(eqGains, forKey: Self.eqGainsKey)
+    }
+
+    /// Persist the current playback rate. Call when a Speed drag ends or a
+    /// preset is chosen, rather than on every slider tick.
+    func persistRate() {
+        UserDefaults.standard.set(rate, forKey: Self.rateKey)
     }
 
     /// Push every stored EQ gain and the bypass state into the engine (after
@@ -167,6 +186,7 @@ final class AudioPlayer: ObservableObject {
     /// Flatten every EQ band back to 0 dB (leaves speed/pitch/balance alone).
     func resetEQ() {
         for i in eqGains.indices { setEQGain(band: i, dB: 0) }
+        persistEQGains()
     }
 
     /// True when any EQ band is boosted or cut from flat.
@@ -370,9 +390,11 @@ final class AudioPlayer: ObservableObject {
     /// Restore the default speed, pitch, channel mode, and EQ.
     func resetPlayback() {
         rate = 1.0
+        persistRate()
         pitchSemitones = 0
         channelMode = .stereo
         for i in eqGains.indices { setEQGain(band: i, dB: 0) }
+        persistEQGains()
     }
 
     func stop() {

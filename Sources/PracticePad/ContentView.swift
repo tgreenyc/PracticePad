@@ -395,7 +395,10 @@ struct ContentView: View {
                     .monospacedDigit()
             }
 
-            Slider(value: $player.rate, in: 0.25...2.0, step: 0.01) {
+            Slider(value: $player.rate, in: 0.25...2.0, step: 0.01, onEditingChanged: { editing in
+                // Persist once when the drag ends, not on every tick.
+                if !editing { player.persistRate() }
+            }) {
                 Text("Playback speed")
             }
             .disabled(player.audioFileURL == nil)
@@ -404,6 +407,7 @@ struct ContentView: View {
                 ForEach(Self.speedPresets, id: \.self) { preset in
                     Button(Self.speedLabel(preset)) {
                         player.rate = preset
+                        player.persistRate()
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
@@ -528,7 +532,11 @@ struct ContentView: View {
                             set: { player.setEQGain(band: index, dB: $0) }
                         ),
                         in: AudioPlayer.eqGainRange,
-                        step: 0.5
+                        step: 0.5,
+                        onEditingChanged: { editing in
+                            // Persist once, when the drag ends — not on every tick.
+                            if !editing { player.persistEQGains() }
+                        }
                     )
                     .frame(width: Self.eqTrackLength)
                     .rotationEffect(.degrees(-90))
