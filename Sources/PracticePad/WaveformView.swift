@@ -75,8 +75,6 @@ struct WaveformView: View {
         ZStack(alignment: .leading) {
             Color(nsColor: .textBackgroundColor)
 
-            // Region fills sit behind the waveform so the bars show through.
-            savedRegionBands(width: width, height: height)
             loopHighlight(width: width, height: height)
             dragPreview(height: height)
 
@@ -101,32 +99,28 @@ struct WaveformView: View {
         }
     }
 
-    /// Fills for saved loops: a lighter version of the active loop's yellow so
-    /// saved regions read in the same visual language. Drawn behind the
-    /// waveform (bars show through) and beneath the active A–B highlight.
-    @ViewBuilder
-    private func savedRegionBands(width: CGFloat, height: CGFloat) -> some View {
-        ForEach(regions) { region in
-            let x = CGFloat(min(max(0, region.start), 1)) * width
-            let w = CGFloat(min(max(0, region.end - region.start), 1)) * width
-            Rectangle()
-                .fill(Color.yellow.opacity(0.15))
-                .overlay(alignment: .leading) {
-                    Rectangle().fill(Color.yellow.opacity(0.6)).frame(width: 1)
-                }
-                .overlay(alignment: .trailing) {
-                    Rectangle().fill(Color.yellow.opacity(0.6)).frame(width: 1)
-                }
-                .frame(width: max(w, 1), height: height)
-                .offset(x: x)
-                .allowsHitTesting(false)
-        }
-    }
-
-    /// Saved-loop name labels, drawn last (on top of the waveform) so the bars
-    /// never cover them. Dark-red heavy text on a white pill for contrast.
+    /// Saved-loop boundary lines and name labels, drawn last (on top of the
+    /// waveform) so the played-coloured bars never cover them. Dark-red heavy
+    /// text on a white pill for contrast; thin white lines mark start and end.
     @ViewBuilder
     private func savedRegionLabels(width: CGFloat, height: CGFloat) -> some View {
+        // Start/end boundary lines on top of the waveform.
+        ForEach(regions) { region in
+            let startX = CGFloat(min(max(0, region.start), 1)) * width
+            let endX = CGFloat(min(max(0, region.end), 1)) * width
+            Rectangle()
+                .fill(Color.white.opacity(0.85))
+                .frame(width: 1, height: height)
+                .offset(x: startX)
+                .allowsHitTesting(false)
+            Rectangle()
+                .fill(Color.white.opacity(0.85))
+                .frame(width: 1, height: height)
+                .offset(x: endX)
+                .allowsHitTesting(false)
+        }
+
+        // Name labels.
         ForEach(regions) { region in
             let x = CGFloat(min(max(0, region.start), 1)) * width
             let w = CGFloat(min(max(0, region.end - region.start), 1)) * width
@@ -233,6 +227,13 @@ struct WaveformView: View {
         let barWidth = size.width / CGFloat(count)
         let playedX = size.width * CGFloat(progress)
 
+        // Region bounds in pixels, for tinting bars that fall inside a saved
+        // loop a lighter blue so those stretches stand out from the rest.
+        let regionRanges: [ClosedRange<CGFloat>] = regions.map {
+            (CGFloat(min(max(0, $0.start), 1)) * size.width)
+                ... (CGFloat(min(max(0, $0.end), 1)) * size.width)
+        }
+
         for (index, sample) in samples.enumerated() {
             let x = CGFloat(index) * barWidth
             let barHeight = max(1, CGFloat(sample) * size.height)
@@ -242,7 +243,16 @@ struct WaveformView: View {
                 width: max(1, barWidth - 0.5),
                 height: barHeight
             )
-            let color: Color = x <= playedX ? .accentColor : Color.secondary.opacity(0.55)
+            let played = x <= playedX
+            let inRegion = regionRanges.contains { $0.contains(x) }
+            let color: Color
+            if inRegion {
+                // Faded blue for saved-loop stretches; a touch brighter once
+                // played so progress is still readable within the region.
+                color = Color.blue.opacity(played ? 0.55 : 0.30)
+            } else {
+                color = played ? .accentColor : Color.secondary.opacity(0.55)
+            }
             context.fill(Path(rect), with: .color(color))
         }
     }
