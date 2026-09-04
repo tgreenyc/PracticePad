@@ -4,7 +4,9 @@
 
 A macOS app for practicing music by ear. Load an audio or video file, slow it down without changing the pitch (or shift the pitch without changing the speed), and loop a tricky passage over and over until you've got it. Video files play their picture alongside the same practice controls.
 
-Built with SwiftUI and AVFoundation (`AVAudioEngine` + `AVAudioUnitTimePitch` for audio; a muted `AVPlayer` slaved to the audio clock for the video picture).
+Built with SwiftUI and AVFoundation. Time-stretching and pitch-shifting are done by the [Rubber Band Library](https://breakfastquay.com/rubberband/): the decoded track is pulled through a `RubberBandStretcher` (real-time mode, R3 "finer" engine) inside an `AVAudioSourceNode`, then out through `AVAudioEngine`. A muted `AVPlayer`, slaved to the audio clock, provides the video picture.
+
+> **Dependency & license note:** Rubber Band is required to build and run. Install it with `brew install rubberband` (the build reads its headers/library from the Homebrew prefix — `/opt/homebrew` on Apple Silicon, `/usr/local` on Intel). Rubber Band is distributed under the **GNU General Public License (GPL)**; linking it means a distributed build of PracticePad is subject to the GPL unless you obtain a commercial Rubber Band license from Breakfast Quay.
 
 <br clear="left" />
 
@@ -71,7 +73,12 @@ Behavior notes:
 
 ## Building from source
 
-Requires macOS 13+ and a Swift toolchain (Xcode or the Swift command-line tools).
+Requires macOS 13+, a Swift toolchain (Xcode or the Swift command-line tools),
+and the Rubber Band library:
+
+```bash
+brew install rubberband
+```
 
 ### Run during development
 
@@ -108,6 +115,8 @@ another Mac you'd need a Developer ID signature and notarization.
 - `Sources/PracticePad/ContentView.swift` — main UI, transport controls, drag-and-drop, resizable/full-screen video.
 - `Sources/PracticePad/WaveformView.swift` — waveform, seek, and loop handles.
 - `Sources/PracticePad/VideoPlayerView.swift` — `AVPlayerLayer`-backed view for the video picture.
-- `Sources/PracticePad/AudioPlayer.swift` — audio engine, seeking, gapless looping, video sync, persistence.
+- `Sources/PracticePad/AudioPlayer.swift` — transport, seeking, A-B looping, video sync, persistence; drives the Rubber Band engine.
+- `Sources/PracticePad/RubberBandEngine.swift` — `AVAudioSourceNode` pull loop feeding decoded audio through Rubber Band.
+- `Sources/CRubberBand/` — module map exposing Rubber Band's C API (`rubberband-c.h`) to Swift.
 - `Sources/PracticePad/FileImporter.swift` — open panel and supported audio/video types.
 - `scripts/make_app.sh` — packages the `.app` bundle.

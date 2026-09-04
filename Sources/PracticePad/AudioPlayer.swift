@@ -18,7 +18,8 @@ final class AudioPlayer: ObservableObject {
     /// True when the loaded file carries a video track worth showing.
     @Published private(set) var hasVideo = false
     /// A muted `AVPlayer` for the picture only; audio always comes from the
-    /// engine. Slaved to the audio clock so pitch/speed/loop stay authoritative.
+    /// Rubber Band engine. Slaved to the audio clock so pitch/speed/loop stay
+    /// authoritative.
     @Published private(set) var videoPlayer: AVPlayer?
 
     /// True only when both loop points are set and in the correct order.
@@ -28,7 +29,9 @@ final class AudioPlayer: ObservableObject {
     }
     @Published var rate: Double = 1.0 {
         didSet {
-            timePitch.rate = Float(rate)
+            // Rubber Band's time ratio is output/input duration: to play at
+            // `rate`× speed the track must be *shortened*, i.e. ratio = 1/rate.
+            engine.setTimeRatio(1.0 / rate)
             // Match the picture's playback rate so it stays in step; pitch shift
             // doesn't alter timing, so the video ignores it.
             videoPlayer?.rate = isPlaying ? Float(rate) : 0
@@ -37,7 +40,8 @@ final class AudioPlayer: ObservableObject {
     }
     @Published var pitchSemitones: Int = 0 {
         didSet {
-            timePitch.pitch = Float(pitchSemitones * 100)
+            // Each semitone is a factor of 2^(1/12) in frequency.
+            engine.setPitchScale(pow(2.0, Double(pitchSemitones) / 12.0))
             UserDefaults.standard.set(pitchSemitones, forKey: Self.pitchKey)
         }
     }
@@ -51,23 +55,14 @@ final class AudioPlayer: ObservableObject {
     private static let recentFilesKey = "PracticePad.recentFiles"
     private let maxRecentFiles = 10
 
-    private let engine = AVAudioEngine()
-    private let playerNode = AVAudioPlayerNode()
-    private let timePitch = AVAudioUnitTimePitch()
+    /// Rubber Band-backed playback engine (owns the AVAudioEngine graph).
+    private let engine = RubberBandEngine()
     private var audioFile: AVAudioFile?
-    private var isScheduled = false
 
     private var sampleRate: Double = 44_100
     private var totalFrames: AVAudioFramePosition = 0
-    /// Frame within the file where the current scheduling started. The player
-    /// node's own timeline resets to zero on each (re)schedule, so this anchors
-    /// it back to an absolute position in the file for display and seeking.
-    private var seekFrame: AVAudioFramePosition = 0
-    /// Incremented on each schedule so stale completion handlers (e.g. from a
-    /// segment that was superseded by a seek) can be ignored.
-    private var scheduleGeneration = 0
     /// While the user is dragging the scrubber we stop driving `currentTime`
-    /// from the render clock so the thumb tracks the finger instead.
+    /// from the engine so the thumb tracks the finger instead.
     private var isScrubbing = false
     private var displayTimer: Timer?
     private let waveformBucketCount = 600
@@ -76,22 +71,10 @@ final class AudioPlayer: ObservableObject {
     /// linearly, even when looping is enabled. Cleared by stop/load and by any
     /// explicit loop edit, so Stop→Play (or re-editing the loop) re-engages it.
     private var honorSeekPosition = false
-    /// Whether playback should currently use the gapless A-B loop buffer.
+    /// Whether playback should currently use the A-B loop.
     private var shouldLoop: Bool {
         loopEnabled && isLoopValid && !honorSeekPosition
     }
-
-    /// True while a gapless A-B loop buffer is scheduled on the node.
-    private var loopBufferActive = false
-    /// File frame the current loop buffer starts at, and its length in frames,
-    /// used to map the node's cumulative sample time back to a track position.
-    private var loopBufferStartFrame: AVAudioFramePosition = 0
-    private var loopBufferFrames: AVAudioFramePosition = 0
-    /// When a loop is (re)started mid-region, a one-shot "tail" from the resume
-    /// point to B plays before the looping buffer. These map the node's sample
-    /// time during that tail back to a track position.
-    private var loopTailStartFrame: AVAudioFramePosition = 0
-    private var loopTailFrames: AVAudioFramePosition = 0
 
     var audioFileURL: URL? {
         audioFile?.url
@@ -99,7 +82,7 @@ final class AudioPlayer: ObservableObject {
 
     init() {
         // Restore saved speed/pitch (assignments in init don't fire didSet, so
-        // apply them to the time-pitch unit explicitly below).
+        // apply them to the engine explicitly below).
         let defaults = UserDefaults.standard
         if defaults.object(forKey: Self.rateKey) != nil {
             rate = min(max(defaults.double(forKey: Self.rateKey), 0.25), 2.0)
@@ -108,13 +91,11 @@ final class AudioPlayer: ObservableObject {
         recentFiles = (defaults.array(forKey: Self.recentFilesKey) as? [String] ?? [])
             .map { URL(fileURLWithPath: $0) }
 
-        engine.attach(playerNode)
-        engine.attach(timePitch)
-        engine.connect(playerNode, to: timePitch, format: nil)
-        engine.connect(timePitch, to: engine.mainMixerNode, format: nil)
-        timePitch.rate = Float(rate)
-        timePitch.pitch = Float(pitchSemitones * 100)
-        try? engine.start()
+        engine.setTimeRatio(1.0 / rate)
+        engine.setPitchScale(pow(2.0, Double(pitchSemitones) / 12.0))
+        engine.onReachedEnd = { [weak self] in
+            self?.handleReachedEnd()
+        }
 
         restoreLastSession()
     }
@@ -165,18 +146,18 @@ final class AudioPlayer: ObservableObject {
             audioFile = file
             loadedFileName = url.lastPathComponent
             sampleRate = file.processingFormat.sampleRate
-
-            // Match the graph to the file's format so raw loop buffers (which
-            // aren't resampled by the node) play at the correct pitch/speed,
-            // just like the auto-converted linear scheduleSegment path.
-            engine.connect(playerNode, to: timePitch, format: file.processingFormat)
-            engine.connect(timePitch, to: engine.mainMixerNode, format: file.processingFormat)
             totalFrames = file.length
             duration = sampleRate > 0 ? Double(totalFrames) / sampleRate : 0
-            seekFrame = 0
             currentTime = 0
-            isScheduled = false
             honorSeekPosition = false
+
+            // Decode into the engine and set the current speed/pitch on the
+            // freshly built stretcher.
+            engine.load(
+                file: file,
+                initialTimeRatio: 1.0 / rate,
+                initialPitchScale: pow(2.0, Double(pitchSemitones) / 12.0)
+            )
 
             // Grab any saved loop for this exact file before clearing state.
             let restoredLoop = savedLoop(for: url, duration: duration)
@@ -193,7 +174,7 @@ final class AudioPlayer: ObservableObject {
                 loopEnabled = restoredLoop.enabled
             }
 
-            scheduleSegmentIfNeeded()
+            syncEngineLoop()
         } catch {
             errorMessage = "Unable to load media file. \(error.localizedDescription)"
             removeRecentFile(url)
@@ -282,21 +263,21 @@ final class AudioPlayer: ObservableObject {
             return
         }
 
-        do {
-            try startEngineIfNeeded()
-            scheduleSegmentIfNeeded()
-            playerNode.play()
-            isPlaying = true
-            startDisplayTimer()
-            resyncVideo(seek: true)
-        } catch {
-            errorMessage = "Audio error: \(error.localizedDescription)"
+        // Replaying after the track finished: rewind to the start.
+        if currentTime >= duration, duration > 0 {
+            currentTime = 0
+            engine.seek(toFrame: 0, looping: shouldLoop)
         }
+        syncEngineLoop()
+        engine.start()
+        isPlaying = true
+        startDisplayTimer()
+        resyncVideo(seek: true)
     }
 
     func pause() {
-        guard playerNode.isPlaying else { return }
-        playerNode.pause()
+        guard isPlaying else { return }
+        engine.pause()
         isPlaying = false
         stopDisplayTimer()
         videoPlayer?.pause()
@@ -317,12 +298,9 @@ final class AudioPlayer: ObservableObject {
     }
 
     func stop() {
-        playerNode.stop()
+        engine.stop()
         isPlaying = false
-        isScheduled = false
-        loopBufferActive = false
         honorSeekPosition = false
-        seekFrame = 0
         currentTime = 0
         stopDisplayTimer()
         videoPlayer?.pause()
@@ -332,14 +310,8 @@ final class AudioPlayer: ObservableObject {
     /// Seek to an absolute time in the track, resuming playback if it was
     /// already playing.
     func seek(to time: TimeInterval) {
-        guard let file = audioFile else { return }
+        guard audioFile != nil else { return }
         let clamped = min(max(0, time), duration)
-        let wasPlaying = isPlaying
-
-        playerNode.stop()
-        isScheduled = false
-        loopBufferActive = false
-        seekFrame = AVAudioFramePosition(clamped * sampleRate)
         currentTime = clamped
 
         // Seeking within an active loop keeps looping (continue to B, then
@@ -347,17 +319,12 @@ final class AudioPlayer: ObservableObject {
         if loopEnabled, isLoopValid, let start = loopStart, let end = loopEnd,
            clamped >= start, clamped < end {
             honorSeekPosition = false
-            scheduleLoop(file: file, resumeFrom: clamped)
         } else {
             honorSeekPosition = true
-            scheduleSegmentIfNeeded()
         }
+        syncEngineLoop()
+        engine.seek(toFrame: frame(for: clamped), looping: shouldLoop)
 
-        if wasPlaying {
-            playerNode.play()
-            isPlaying = true
-            startDisplayTimer()
-        }
         resyncVideo(seek: true)
     }
 
@@ -406,51 +373,46 @@ final class AudioPlayer: ObservableObject {
     }
 
     /// Commit an in-progress A/B handle drag: rebuild the loop so the new
-    /// bounds take effect. Called when the handle drag ends so we don't rebuild
-    /// the buffer on every pixel of movement. Moving the B handle keeps the
-    /// playhead where it is (continuing to B, then looping); moving the A handle
-    /// restarts the loop at the new start.
+    /// bounds take effect. Moving the B handle keeps the playhead where it is
+    /// (continuing to B, then looping); moving the A handle restarts the loop
+    /// at the new start.
     func commitLoopEdit(resetToStart: Bool) {
         honorSeekPosition = false
-        guard isPlaying, shouldLoop, let file = audioFile else {
+        guard shouldLoop else {
             applyLoopChange()
             return
         }
-        isScheduled = false
-        scheduleLoop(file: file, resumeFrom: resetToStart ? nil : currentTime)
-        playerNode.play()
-        startDisplayTimer()
+        syncEngineLoop()
+        if resetToStart, let start = loopStart {
+            currentTime = start
+            engine.seek(toFrame: frame(for: start), looping: true)
+        }
         resyncVideo(seek: true)
     }
 
-    /// Rebuild playback for the current loop state. If playing, reschedules in
-    /// place (continuing linear playback from the current spot, or restarting
-    /// the gapless loop at A); if stopped, defers to the next `play()`.
+    /// Push the current loop state into the engine and, if looping just became
+    /// active while the needle sits outside the region, pull it to A.
     private func applyLoopChange() {
-        // An explicit loop edit re-engages looping, overriding a prior seek.
         honorSeekPosition = false
-        let wantLoop = shouldLoop
+        syncEngineLoop()
 
-        guard isPlaying else {
-            // Force the next play() to reschedule only if the loop mode differs
-            // from what's already queued.
-            if wantLoop || loopBufferActive { isScheduled = false }
-            loopBufferActive = false
-            return
+        // When looping is (re)engaged and the needle is outside the region,
+        // snap playback to A so it starts looping cleanly.
+        if shouldLoop, let start = loopStart, let end = loopEnd,
+           currentTime < start || currentTime >= end {
+            currentTime = start
+            engine.seek(toFrame: frame(for: start), looping: true)
+            resyncVideo(seek: true)
         }
+    }
 
-        // Nothing loop-related is or would be active — leave playback alone so
-        // e.g. marking an A/B point mid-track doesn't blip the audio.
-        guard wantLoop || loopBufferActive else { return }
-
-        seekFrame = AVAudioFramePosition(min(max(0, currentTime), duration) * sampleRate)
-        loopBufferActive = false
-        playerNode.stop()
-        isScheduled = false
-        scheduleSegmentIfNeeded()
-        playerNode.play()
-        startDisplayTimer()
-        resyncVideo(seek: true)
+    /// Translate the current SwiftUI-facing loop state into engine frames.
+    private func syncEngineLoop() {
+        if shouldLoop, let start = loopStart, let end = loopEnd {
+            engine.setLoop(active: true, startFrame: frame(for: start), endFrame: frame(for: end))
+        } else {
+            engine.setLoop(active: false, startFrame: 0, endFrame: 0)
+        }
     }
 
     /// Move just the in-point (A handle), clamped so it can't cross the
@@ -485,128 +447,13 @@ final class AudioPlayer: ObservableObject {
         seek(to: time)
     }
 
-    private func startEngineIfNeeded() throws {
-        if !engine.isRunning {
-            try engine.start()
-        }
+    private func frame(for time: TimeInterval) -> AVAudioFramePosition {
+        AVAudioFramePosition(min(max(0, time), duration) * sampleRate)
     }
 
-    private func scheduleSegmentIfNeeded() {
-        guard !isScheduled, let file = audioFile else { return }
-        if shouldLoop {
-            scheduleLoopBuffer(file: file)
-        } else {
-            scheduleLinearSegment(file: file)
-        }
-    }
-
-    private func scheduleLinearSegment(file: AVAudioFile) {
-        loopBufferActive = false
-
-        // Replaying after the track finished: rewind to the start.
-        if seekFrame >= totalFrames {
-            seekFrame = 0
-            currentTime = 0
-        }
-
-        let remaining = AVAudioFrameCount(totalFrames - seekFrame)
-        guard remaining > 0 else { return }
-
-        scheduleGeneration += 1
-        let generation = scheduleGeneration
-        playerNode.stop()
-        playerNode.scheduleSegment(
-            file,
-            startingFrame: seekFrame,
-            frameCount: remaining,
-            at: nil
-        ) { [weak self] in
-            DispatchQueue.main.async {
-                self?.handleCompletion(generation: generation)
-            }
-        }
-        isScheduled = true
-    }
-
-    private func scheduleLoopBuffer(file: AVAudioFile) {
-        scheduleLoop(file: file, resumeFrom: nil)
-    }
-
-    /// Read the A-B region into a buffer and let the node loop it natively, so
-    /// the B→A wrap is gapless (no stop/reschedule seam). If `resumeFrom` is a
-    /// time inside the region, a one-shot tail from there to B plays first, so
-    /// the playhead continues from its current spot instead of jumping to A.
-    private func scheduleLoop(file: AVAudioFile, resumeFrom: TimeInterval?) {
-        guard let start = loopStart, let end = loopEnd, end > start else {
-            scheduleLinearSegment(file: file)
-            return
-        }
-        let startFrame = AVAudioFramePosition(start * sampleRate)
-        let endFrame = AVAudioFramePosition(end * sampleRate)
-        let loopFrames = AVAudioFrameCount(endFrame - startFrame)
-        guard loopFrames > 0,
-              let loopBuffer = makeBuffer(file: file, from: startFrame, count: loopFrames) else {
-            scheduleLinearSegment(file: file)
-            return
-        }
-
-        var resumeFrame = startFrame
-        if let resumeFrom {
-            let rf = AVAudioFramePosition(resumeFrom * sampleRate)
-            if rf > startFrame && rf < endFrame { resumeFrame = rf }
-        }
-
-        scheduleGeneration += 1
-        playerNode.stop()
-        if resumeFrame > startFrame {
-            playerNode.scheduleSegment(
-                file,
-                startingFrame: resumeFrame,
-                frameCount: AVAudioFrameCount(endFrame - resumeFrame),
-                at: nil,
-                completionHandler: nil
-            )
-            loopTailStartFrame = resumeFrame
-            loopTailFrames = endFrame - resumeFrame
-        } else {
-            loopTailStartFrame = startFrame
-            loopTailFrames = 0
-        }
-        playerNode.scheduleBuffer(loopBuffer, at: nil, options: .loops, completionHandler: nil)
-
-        loopBufferStartFrame = startFrame
-        loopBufferFrames = AVAudioFramePosition(loopBuffer.frameLength)
-        loopBufferActive = true
-        seekFrame = resumeFrame
-        currentTime = Double(resumeFrame) / sampleRate
-        isScheduled = true
-    }
-
-    private func makeBuffer(
-        file: AVAudioFile,
-        from startFrame: AVAudioFramePosition,
-        count: AVAudioFrameCount
-    ) -> AVAudioPCMBuffer? {
-        guard let buffer = AVAudioPCMBuffer(
-            pcmFormat: file.processingFormat,
-            frameCapacity: count
-        ) else { return nil }
-        do {
-            file.framePosition = startFrame
-            try file.read(into: buffer, frameCount: count)
-        } catch {
-            return nil
-        }
-        return buffer
-    }
-
-    private func handleCompletion(generation: Int) {
-        // Ignore completions from segments that a seek/stop has replaced.
-        guard generation == scheduleGeneration else { return }
+    private func handleReachedEnd() {
         isPlaying = false
-        isScheduled = false
         honorSeekPosition = false
-        seekFrame = totalFrames
         currentTime = duration
         stopDisplayTimer()
         videoPlayer?.pause()
@@ -690,29 +537,12 @@ final class AudioPlayer: ObservableObject {
     }
 
     private func updateCurrentTime() {
-        guard !isScrubbing,
-              let nodeTime = playerNode.lastRenderTime,
-              let playerTime = playerNode.playerTime(forNodeTime: nodeTime) else { return }
+        // Fire a deferred end-of-track callback if the render thread hit it.
+        engine.drainPendingEnd()
 
-        // In a gapless loop the node's sample time keeps climbing across
-        // repeats; map it back into the A-B region for display. A one-shot tail
-        // (after a mid-region resume) plays before the looping buffer begins.
-        if loopBufferActive, loopBufferFrames > 0 {
-            let sampleTime = playerTime.sampleTime
-            let frame: AVAudioFramePosition
-            if sampleTime < loopTailFrames {
-                frame = loopTailStartFrame + sampleTime
-            } else {
-                let within = (sampleTime - loopTailFrames) % loopBufferFrames
-                frame = loopBufferStartFrame + within
-            }
-            currentTime = min(Double(frame) / sampleRate, duration)
-            checkVideoDrift()
-            return
-        }
-
-        let time = Double(seekFrame + playerTime.sampleTime) / sampleRate
-        currentTime = min(time, duration)
+        guard !isScrubbing, isPlaying else { return }
+        let frame = engine.sourceFramePosition
+        currentTime = min(Double(frame) / sampleRate, duration)
         checkVideoDrift()
     }
 
@@ -733,8 +563,8 @@ final class AudioPlayer: ObservableObject {
     }
 
     /// While playing, nudge the video back onto the audio clock if it has
-    /// drifted. Also catches the gapless loop wrap (B→A), where the audio time
-    /// jumps back and the picture must follow.
+    /// drifted. Also catches the loop wrap (B→A), where the audio time jumps
+    /// back and the picture must follow.
     private func checkVideoDrift() {
         guard let vp = videoPlayer, isPlaying, vp.rate != 0 else { return }
         let videoTime = vp.currentTime().seconds

@@ -3,6 +3,12 @@
 #
 # Produces dist/PracticePad.app from a release build, with an Info.plist and an
 # ad-hoc code signature so it launches from Finder / Applications.
+#
+# Requires the Rubber Band library (brew install rubberband). The built binary
+# links it from the Homebrew prefix by absolute path, so the bundle runs only
+# on machines where Homebrew's rubberband is installed. Redistributing to other
+# Macs would require bundling the dylib and rewriting its install name (e.g.
+# with install_name_tool) plus honoring Rubber Band's GPL / commercial license.
 set -euo pipefail
 
 APP_NAME="PracticePad"
