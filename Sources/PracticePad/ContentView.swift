@@ -107,6 +107,7 @@ struct ContentView: View {
                         .font(.footnote)
                 }
             }
+            .groupBoxStyle(LightGroupBoxStyle())
             .padding(20)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(editDismissLayer)
@@ -796,5 +797,24 @@ private struct ContentHeightKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = max(value, nextValue())
+    }
+}
+
+/// A GroupBox style that's a touch lighter than the system default, for a bit
+/// more contrast against the window background. Preserves the standard label +
+/// content layout.
+private struct LightGroupBoxStyle: GroupBoxStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            configuration.label
+                .font(.headline)
+            configuration.content
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.primary.opacity(0.06))
+        )
     }
 }
