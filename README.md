@@ -6,7 +6,7 @@ A macOS app for practicing music by ear. Load an audio or video file, slow it do
 
 Built with SwiftUI and AVFoundation. Time-stretching and pitch-shifting are done by the [Rubber Band Library](https://breakfastquay.com/rubberband/): the decoded track is pulled through a `RubberBandStretcher` (real-time mode, R3 "finer" engine) inside an `AVAudioSourceNode`, then out through `AVAudioEngine`. A muted `AVPlayer`, slaved to the audio clock, provides the video picture.
 
-> **Dependency & license note:** Rubber Band is required to build and run. Install it with `brew install rubberband` (the build reads its headers/library from the Homebrew prefix — `/opt/homebrew` on Apple Silicon, `/usr/local` on Intel). Rubber Band is distributed under the **GNU General Public License (GPL)**; linking it means a distributed build of PracticePad is subject to the GPL unless you obtain a commercial Rubber Band license from Breakfast Quay.
+> **Dependency & license note:** Rubber Band is required to *build* (install it with `brew install rubberband`; the build reads its headers/library from the Homebrew prefix — `/opt/homebrew` on Apple Silicon, `/usr/local` on Intel). The packaged `.app` bundles Rubber Band and its dependencies, so running it does **not** require Homebrew. Rubber Band is distributed under the **GNU General Public License (GPL)**; bundling it means a distributed build of PracticePad is subject to the GPL unless you obtain a commercial Rubber Band license from Breakfast Quay.
 
 <br clear="left" />
 
@@ -105,8 +105,15 @@ This creates `dist/PracticePad.app`. Install it by dragging it into `/Applicatio
 cp -R dist/PracticePad.app /Applications/
 ```
 
-The bundle is ad-hoc signed, which is fine for your own machine. To run it on
-another Mac you'd need a Developer ID signature and notarization.
+The script bundles Rubber Band and its dependencies into
+`Contents/Frameworks` and rewrites their load paths to `@rpath`, so the
+finished `.app` is **self-contained** — it runs on Macs that don't have Homebrew
+or Rubber Band installed. (Homebrew's `rubberband` is still needed to *build*.)
+
+The bundle is ad-hoc signed, which is fine for your own machine. To distribute
+it to other Macs without Gatekeeper warnings you'd add a Developer ID signature
+and notarization — and, because the bundled Rubber Band is GPL, comply with the
+GPL (or use a commercial Rubber Band license).
 
 ## Project layout
 
