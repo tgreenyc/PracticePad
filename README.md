@@ -71,6 +71,7 @@ Behavior notes:
 | `⌘O` | Open a file |
 | `Space` | Play / Pause |
 | `⌘.` | Stop |
+| `←` / `→` | Skip back / forward 1 second |
 | `Delete` | Go to loop start (A) |
 | `⌘R` | Reset speed & pitch |
 | `Esc` | Exit full-screen video |

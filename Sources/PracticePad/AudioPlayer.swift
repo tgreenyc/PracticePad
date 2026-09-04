@@ -428,6 +428,16 @@ final class AudioPlayer: ObservableObject {
         resyncVideo(seek: true)
     }
 
+    /// Default number of seconds the skip-back/forward controls move.
+    static let skipInterval: TimeInterval = 1.0
+
+    /// Seek by a relative offset in seconds (negative = back). Clamped to the
+    /// track bounds; reuses `seek(to:)` so loop/video behavior stays consistent.
+    func skip(by seconds: TimeInterval) {
+        guard audioFile != nil else { return }
+        seek(to: currentTime + seconds)
+    }
+
     /// Jump the playhead to the loop's A point (or the start of the track if no
     /// A is set). Handy for restarting a passage you're drilling. Seeking to A
     /// keeps looping engaged when a valid loop exists.

@@ -61,6 +61,18 @@ struct PracticePadApp: App {
                 .keyboardShortcut(.delete, modifiers: [])
                 .disabled(!player.canJumpToLoopStart)
 
+                Button("Skip Back 1 Second") {
+                    player.skip(by: -AudioPlayer.skipInterval)
+                }
+                .keyboardShortcut(.leftArrow, modifiers: [])
+                .disabled(player.audioFileURL == nil)
+
+                Button("Skip Forward 1 Second") {
+                    player.skip(by: AudioPlayer.skipInterval)
+                }
+                .keyboardShortcut(.rightArrow, modifiers: [])
+                .disabled(player.audioFileURL == nil)
+
                 Divider()
 
                 Button("Reset Speed & Pitch") {
