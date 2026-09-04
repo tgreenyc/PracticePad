@@ -410,8 +410,8 @@ struct ContentView: View {
         .disabled(player.audioFileURL == nil)
     }
 
-    /// List of saved loops for the current track: click a row to recall it,
-    /// double-click the name to rename, and use the trash button to delete.
+    /// List of saved loops for the current track: recall (↩), rename (pencil,
+    /// which reveals an editable field), and delete (trash).
     private var savedLoopsList: some View {
         VStack(alignment: .leading, spacing: 4) {
             Divider()
@@ -421,8 +421,8 @@ struct ContentView: View {
 
             ForEach(player.savedLoops) { loop in
                 HStack(spacing: 8) {
-                    // Recall affordance (kept separate from the name field so
-                    // clicking the name to rename doesn't also recall).
+                    // Recall affordance (kept separate from the name so clicking
+                    // the name doesn't also recall).
                     Button {
                         player.recallLoop(loop)
                     } label: {
@@ -432,19 +432,34 @@ struct ContentView: View {
                     .buttonStyle(.borderless)
                     .help("Recall this loop (jump to its start and loop it)")
 
-                    // Inline-editable name. Focusing it pauses plain-key
-                    // shortcuts (see onChange below) so Delete/Space/arrows edit
-                    // the text instead of triggering transport commands.
-                    TextField("Name", text: Binding(
-                        get: { loop.name },
-                        set: { player.renameLoop(id: loop.id, to: $0) }
-                    ))
-                    .textFieldStyle(.plain)
-                    .frame(maxWidth: 160, alignment: .leading)
-                    .focused($editingLoopID, equals: loop.id)
-                    .onSubmit {
-                        player.commitLoopName(id: loop.id)
-                        editingLoopID = nil
+                    // Edit gate: the name is read-only until you click the
+                    // pencil, so it can't be changed by accident.
+                    Button {
+                        editingLoopID = loop.id
+                    } label: {
+                        Image(systemName: "pencil")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Rename this loop")
+
+                    if editingLoopID == loop.id {
+                        // Editable name. Focusing it pauses plain-key shortcuts
+                        // (see onChange below) so Delete/Space/arrows edit text
+                        // instead of triggering transport commands.
+                        TextField("Name", text: Binding(
+                            get: { loop.name },
+                            set: { player.renameLoop(id: loop.id, to: $0) }
+                        ))
+                        .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: 160, alignment: .leading)
+                        .focused($editingLoopID, equals: loop.id)
+                        .onSubmit {
+                            player.commitLoopName(id: loop.id)
+                            editingLoopID = nil
+                        }
+                    } else {
+                        Text(loop.name)
+                            .frame(maxWidth: 160, alignment: .leading)
                     }
 
                     Spacer(minLength: 8)
