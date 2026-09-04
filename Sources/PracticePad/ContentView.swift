@@ -307,8 +307,17 @@ struct ContentView: View {
 
     private var statusLine: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("File: \(player.loadedFileName)")
-            Text("Status: \(player.isPlaying ? "Playing" : "Stopped")  •  \(String(format: "%.2fx", player.rate)), \(player.pitchSemitones) semitones")
+            // "File: " label stays secondary; the filename itself is primary
+            // (white in dark mode) for contrast.
+            Text("File: ").foregroundColor(.secondary)
+                + Text(player.loadedFileName).foregroundColor(.primary)
+            // "Status: " label and the trailing speed/pitch stay secondary;
+            // the status value is green while playing, red while stopped.
+            Text("Status: ").foregroundColor(.secondary)
+                + Text(player.isPlaying ? "Playing" : "Stopped")
+                    .foregroundColor(player.isPlaying ? .green : .red)
+                + Text("  •  \(String(format: "%.2fx", player.rate)), \(player.pitchSemitones) semitones")
+                    .foregroundColor(.secondary)
         }
         .font(.subheadline)
         .foregroundColor(.secondary)
