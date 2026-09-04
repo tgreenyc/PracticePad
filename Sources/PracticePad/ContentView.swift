@@ -545,6 +545,38 @@ struct ContentView: View {
 
     private var speedPitchSection: some View {
         VStack(alignment: .leading, spacing: 12) {
+            // Speed and Pitch side by side, split 50/50 with a divider.
+            HStack(alignment: .top, spacing: 16) {
+                speedColumn
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Divider()
+                pitchColumn
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            HStack {
+                Spacer()
+                Button {
+                    player.resetPlayback()
+                } label: {
+                    Label("Reset", systemImage: "arrow.counterclockwise")
+                }
+                .controlSize(.small)
+                .help("Reset speed, pitch, channel mode, and EQ (⌘R)")
+                .disabled(
+                    abs(player.rate - 1.0) < 0.0001
+                        && player.pitchSemitones == 0
+                        && player.channelMode == .stereo
+                        && !player.isEQActive
+                )
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(4)
+    }
+
+    private var speedColumn: some View {
+        VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("Speed")
                 Spacer()
@@ -572,7 +604,11 @@ struct ContentView: View {
                 }
                 Spacer()
             }
+        }
+    }
 
+    private var pitchColumn: some View {
+        VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("Pitch")
                 Spacer()
@@ -587,26 +623,7 @@ struct ContentView: View {
                 Text("Pitch shift")
             }
             .disabled(player.audioFileURL == nil)
-
-            HStack {
-                Spacer()
-                Button {
-                    player.resetPlayback()
-                } label: {
-                    Label("Reset", systemImage: "arrow.counterclockwise")
-                }
-                .controlSize(.small)
-                .help("Reset speed, pitch, channel mode, and EQ (⌘R)")
-                .disabled(
-                    abs(player.rate - 1.0) < 0.0001
-                        && player.pitchSemitones == 0
-                        && player.channelMode == .stereo
-                        && !player.isEQActive
-                )
-            }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(4)
     }
 
     /// The "Mix" section: a graphic EQ on the left and the balance / channel
