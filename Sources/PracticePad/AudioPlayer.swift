@@ -428,6 +428,19 @@ final class AudioPlayer: ObservableObject {
         resyncVideo(seek: true)
     }
 
+    /// Jump the playhead to the loop's A point (or the start of the track if no
+    /// A is set). Handy for restarting a passage you're drilling. Seeking to A
+    /// keeps looping engaged when a valid loop exists.
+    func jumpToLoopStart() {
+        guard audioFile != nil else { return }
+        seek(to: loopStart ?? 0)
+    }
+
+    /// True when there's an A point (or track start) to jump back to.
+    var canJumpToLoopStart: Bool {
+        audioFile != nil
+    }
+
     /// Called continuously while the user drags the scrubber. Updates the
     /// displayed time without touching the audio graph.
     func beginScrubbing() {

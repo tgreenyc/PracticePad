@@ -55,6 +55,11 @@ Built with SwiftUI and AVFoundation. Time-stretching and pitch-shifting are done
   - Dragging **B** keeps playing from the current spot out to the new end, then loops.
 - **Clear** removes the loop.
 
+Jump back to the loop start anytime with **Go to A** (or the `Delete` key,
+easy to reach one-handed while playing) — handy for restarting a passage you're
+drilling. With no loop set, it jumps to the start of
+the track.
+
 Behavior notes:
 - Seeking **inside** the loop keeps looping; seeking **outside** it plays straight through from the needle.
 - **Stop → Play** always restarts the loop from **A**.
@@ -66,6 +71,7 @@ Behavior notes:
 | `⌘O` | Open a file |
 | `Space` | Play / Pause |
 | `⌘.` | Stop |
+| `Delete` | Go to loop start (A) |
 | `⌘R` | Reset speed & pitch |
 | `Esc` | Exit full-screen video |
 

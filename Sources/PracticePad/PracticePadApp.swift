@@ -55,6 +55,12 @@ struct PracticePadApp: App {
                 .keyboardShortcut(".", modifiers: [.command])
                 .disabled(player.audioFileURL == nil || !player.isPlaying)
 
+                Button("Go to Loop Start") {
+                    player.jumpToLoopStart()
+                }
+                .keyboardShortcut(.delete, modifiers: [])
+                .disabled(!player.canJumpToLoopStart)
+
                 Divider()
 
                 Button("Reset Speed & Pitch") {

@@ -359,6 +359,15 @@ struct ContentView: View {
             .tint(.yellow)
             .disabled(!player.isLoopValid)
 
+            Button {
+                player.jumpToLoopStart()
+            } label: {
+                Label("Go to A", systemImage: "backward.end.fill")
+            }
+            .controlSize(.small)
+            .disabled(!player.canJumpToLoopStart)
+            .help("Jump to the loop start (Delete)")
+
             Spacer()
 
             Button("Clear") { player.clearLoop() }
