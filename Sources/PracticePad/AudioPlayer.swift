@@ -10,6 +10,9 @@ final class AudioPlayer: ObservableObject {
     @Published private(set) var loopStart: TimeInterval? { didSet { persistLoop() } }
     @Published private(set) var loopEnd: TimeInterval? { didSet { persistLoop() } }
     @Published var loopEnabled = false { didSet { persistLoop() } }
+    /// Named A–B regions saved for the currently loaded file, in time order.
+    /// Recalling one loads its bounds into the active loop above.
+    @Published private(set) var savedLoops: [SavedLoop] = []
     /// Normalized (0...1) peak amplitudes, one per horizontal bucket, for
     /// drawing the waveform. Empty until extraction finishes.
     @Published private(set) var waveform: [Float] = []
@@ -84,7 +87,12 @@ final class AudioPlayer: ObservableObject {
     private static let loopEndKey = "PracticePad.loopEnd"
     private static let loopEnabledKey = "PracticePad.loopEnabled"
     private static let recentFilesKey = "PracticePad.recentFiles"
+    /// One JSON blob mapping a file's path to its list of saved loops.
+    private static let savedLoopsKey = "PracticePad.savedLoops"
     private let maxRecentFiles = 10
+    /// Cap on how many files' saved-loop lists we retain, pruned by recency
+    /// (mirrors how recent files are bounded).
+    private let maxSavedLoopFiles = 50
 
     /// Rubber Band-backed playback engine (owns the AVAudioEngine graph).
     private let engine = RubberBandEngine()
@@ -233,6 +241,96 @@ final class AudioPlayer: ObservableObject {
         return (start, end, defaults.bool(forKey: Self.loopEnabledKey))
     }
 
+    // MARK: - Saved loops (per-file store)
+
+    /// Decode the whole `[filePath: [SavedLoop]]` map from UserDefaults.
+    private func loadSavedLoopStore() -> [String: [SavedLoop]] {
+        guard let data = UserDefaults.standard.data(forKey: Self.savedLoopsKey),
+              let map = try? JSONDecoder().decode([String: [SavedLoop]].self, from: data)
+        else { return [:] }
+        return map
+    }
+
+    /// Encode the whole map back to UserDefaults.
+    private func writeSavedLoopStore(_ map: [String: [SavedLoop]]) {
+        guard let data = try? JSONEncoder().encode(map) else { return }
+        UserDefaults.standard.set(data, forKey: Self.savedLoopsKey)
+    }
+
+    /// Persist the current `savedLoops` for the loaded file, pruning the store
+    /// to the most recent files so it doesn't grow without bound.
+    private func persistSavedLoops() {
+        guard let path = audioFile?.url.path else { return }
+        var map = loadSavedLoopStore()
+        if savedLoops.isEmpty {
+            map.removeValue(forKey: path)
+        } else {
+            map[path] = savedLoops
+        }
+        // Prune by recency: keep entries for the newest files we know about,
+        // always retaining the current file.
+        if map.count > maxSavedLoopFiles {
+            let ordered = recentFiles.map(\.path)
+            let keep = Set(([path] + ordered).prefix(maxSavedLoopFiles))
+            map = map.filter { keep.contains($0.key) }
+        }
+        writeSavedLoopStore(map)
+    }
+
+    /// Load the saved loops for `url` into `savedLoops`, migrating a legacy
+    /// single-loop entry if present and no list exists yet. Returns nothing;
+    /// updates the published property.
+    private func loadSavedLoops(for url: URL, duration: TimeInterval) {
+        var map = loadSavedLoopStore()
+        var list = (map[url.path] ?? []).filter { $0.end > $0.start }
+
+        // One-time migration: if there's no saved-loop list for this file but a
+        // legacy single A–B loop exists for it, seed the list with it.
+        if list.isEmpty, let legacy = savedLoop(for: url, duration: duration) {
+            list = [SavedLoop(name: "Loop 1", start: legacy.start, end: legacy.end)]
+            map[url.path] = list
+            writeSavedLoopStore(map)
+        }
+
+        // Clamp any loops that exceed this file's duration.
+        savedLoops = list.map { loop in
+            var l = loop
+            l.end = min(l.end, duration)
+            return l
+        }.filter { $0.end > $0.start }
+        .sorted { $0.start < $1.start }
+    }
+
+    /// Save the current active A–B region as a new named loop (auto-named
+    /// "Loop N"). No-op if the current loop isn't valid.
+    func saveCurrentLoop() {
+        guard let start = loopStart, let end = loopEnd, end > start else { return }
+        let name = "Loop \(savedLoops.count + 1)"
+        savedLoops.append(SavedLoop(name: name, start: start, end: end))
+        savedLoops.sort { $0.start < $1.start }
+        persistSavedLoops()
+    }
+
+    /// Load a saved loop into the active A–B loop and jump to its start.
+    func recallLoop(_ loop: SavedLoop) {
+        setLoopRegion(start: loop.start, end: loop.end)
+        jumpToLoopStart()
+    }
+
+    /// Rename a saved loop.
+    func renameLoop(id: SavedLoop.ID, to newName: String) {
+        guard let i = savedLoops.firstIndex(where: { $0.id == id }) else { return }
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        savedLoops[i].name = trimmed.isEmpty ? savedLoops[i].name : trimmed
+        persistSavedLoops()
+    }
+
+    /// Delete a saved loop.
+    func deleteLoop(id: SavedLoop.ID) {
+        savedLoops.removeAll { $0.id == id }
+        persistSavedLoops()
+    }
+
     func load(url: URL) {
         stop()
         do {
@@ -256,7 +354,11 @@ final class AudioPlayer: ObservableObject {
             applyAllEQGains()
 
             // Grab any saved loop for this exact file before clearing state.
+            // Both this and the saved-loops migration read the legacy keys,
+            // which are keyed against `lastFileKey` — so do them before that
+            // key is overwritten below.
             let restoredLoop = savedLoop(for: url, duration: duration)
+            loadSavedLoops(for: url, duration: duration)
 
             clearLoop()
             loadWaveform(url: url)
@@ -350,6 +452,9 @@ final class AudioPlayer: ObservableObject {
         videoPlayer = nil
         hasVideo = false
         clearLoop()
+        // Clear the in-memory list only (the persisted store is untouched, so
+        // reopening the file restores its saved loops).
+        savedLoops = []
         UserDefaults.standard.removeObject(forKey: Self.lastFileKey)
     }
 
