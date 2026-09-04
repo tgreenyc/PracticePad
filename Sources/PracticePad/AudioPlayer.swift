@@ -186,6 +186,21 @@ final class AudioPlayer: ObservableObject {
         UserDefaults.standard.set(rate, forKey: Self.rateKey)
     }
 
+    /// Amount the speed-up/slow-down shortcuts change the rate per press.
+    static let rateStep: Double = 0.05
+    /// Bounds of the playback rate (matches the Speed slider).
+    static let rateRange: ClosedRange<Double> = 0.25...2.0
+
+    /// Nudge the playback rate by a relative amount (e.g. +/- rateStep),
+    /// clamped to `rateRange`, and persist. For the speed hotkeys.
+    func adjustRate(by delta: Double) {
+        let stepped = (rate + delta)
+        // Snap to the step grid so repeated presses stay on clean values.
+        let snapped = (stepped / Self.rateStep).rounded() * Self.rateStep
+        rate = min(max(snapped, Self.rateRange.lowerBound), Self.rateRange.upperBound)
+        persistRate()
+    }
+
     /// Push every stored EQ gain and the bypass state into the engine (after
     /// init or a graph rebuild).
     private func applyAllEQGains() {

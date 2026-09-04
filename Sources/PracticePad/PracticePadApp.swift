@@ -120,6 +120,20 @@ struct PracticePadApp: App {
 
                 Divider()
 
+                Button("Speed Up") {
+                    player.adjustRate(by: AudioPlayer.rateStep)
+                }
+                .keyboardShortcut("+", modifiers: [.command])
+                .disabled(player.audioFileURL == nil)
+
+                Button("Slow Down") {
+                    player.adjustRate(by: -AudioPlayer.rateStep)
+                }
+                .keyboardShortcut("-", modifiers: [.command])
+                .disabled(player.audioFileURL == nil)
+
+                Divider()
+
                 Button("Reset Speed & Pitch") {
                     player.resetPlayback()
                 }

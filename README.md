@@ -72,6 +72,7 @@ Behavior notes:
 | `Space` | Play / Pause |
 | `⌘.` | Stop |
 | `←` / `→` | Skip back / forward 1 second |
+| `⌘+` / `⌘-` | Speed up / slow down (0.05×) |
 | `Delete` | Go to loop start (A) |
 | `⌘R` | Reset speed & pitch |
 | `Esc` | Exit full-screen video |
