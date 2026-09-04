@@ -20,9 +20,12 @@ Built with SwiftUI and AVFoundation. Time-stretching and pitch-shifting are done
 - **Pitch control** — shift `-12` to `+12` semitones without affecting speed.
 - **Waveform view** — see the whole track; click to seek.
 - **A-B looping** — gapless looping of a selected region, ideal for drilling a passage.
+- **Saved loops** — save any number of named regions per track (Verse, Chorus, Solo…), recall them with one click, and see them as labeled bands on the waveform.
+- **Equalizer** — a 10-band graphic EQ to shape the tone (e.g. pull down the bass or lift a vocal's presence), with a Flat reset and a Bypass toggle for A/B comparison.
+- **Balance / channel isolation** — play the left or right channel through both speakers, or a "Karaoke" mode that cancels centered content (often the lead vocal). Works by stereo position, so results depend on how the track was mixed.
 - **Drag-and-drop** — drop a supported audio or video file onto the window to load it.
 - **Recent files** — reopen previously loaded tracks from the File menu.
-- **Remembers your setup** — speed, pitch, the last file, its loop, and the video pane size are restored on launch.
+- **Remembers your setup** — speed, pitch, EQ, balance, saved loops, the last file and its loop, and the video pane size are restored on launch.
 
 ## Using the app
 
@@ -41,7 +44,8 @@ Built with SwiftUI and AVFoundation. Time-stretching and pitch-shifting are done
 - **Play/Pause** with the button or the **spacebar**; **Stop** with the button or ⌘.
 - Drag the **Speed** slider (or tap a preset) to slow the track down — pitch stays the same.
 - Drag the **Pitch** slider to transpose in semitones — speed stays the same.
-- **Reset** (↺, or ⌘R) restores speed to `1.00x` and pitch to `0`.
+- **Speed up / slow down** in `0.05×` steps with `⌘+` / `⌘-`.
+- **Reset** (↺, or ⌘R) restores speed to `1.00x`, pitch to `0`, balance to stereo, and the EQ to flat.
 
 ### Seek
 - **Click** anywhere on the waveform, or drag the position slider, to jump to that spot.
@@ -63,6 +67,16 @@ the track.
 Behavior notes:
 - Seeking **inside** the loop keeps looping; seeking **outside** it plays straight through from the needle.
 - **Stop → Play** always restarts the loop from **A**.
+
+### Save and recall loops
+- With an A-B region set, click **Save** to store it as a named loop ("Loop 1", "Loop 2", …). Saved loops are per-track and restored when you reopen the file.
+- Saved loops appear as labeled bands on the waveform (the active loop stays highlighted on top).
+- In the **Saved Loops** list, click the **↩** button to recall a loop (it loads into the A-B region and jumps to its start), the **pencil** to rename it, and the **trash** to delete it.
+- Renaming is gated behind the pencil so a name can't change by accident; press Enter or click elsewhere to save it.
+
+### Shape the sound (Mix)
+- **Equalizer** — a 10-band graphic EQ (31 Hz–16 kHz). Drag a band up or down to boost or cut that range. **Flat** resets all bands to 0 dB; the **Bypass** switch turns the EQ off without losing your settings, so you can A/B compare. An EQ shapes frequency *ranges* — useful for de-emphasizing, say, the bass — but it can't fully isolate an instrument, since instruments share frequencies.
+- **Balance** — choose **Stereo** (normal), **Left** or **Right** (that channel through both speakers, dropping parts panned to the opposite side), or **Karaoke** (plays L − R, cancelling centered content such as lead vocals). These work by stereo position, so how well they isolate a part depends on how the recording was mixed; Karaoke collapses to mono.
 
 ### Keyboard shortcuts
 
@@ -131,8 +145,9 @@ a commercial Rubber Band license).
 - `Sources/PracticePad/ContentView.swift` — main UI, transport controls, drag-and-drop, resizable/full-screen video.
 - `Sources/PracticePad/WaveformView.swift` — waveform, seek, and loop handles.
 - `Sources/PracticePad/VideoPlayerView.swift` — `AVPlayerLayer`-backed view for the video picture.
-- `Sources/PracticePad/AudioPlayer.swift` — transport, seeking, A-B looping, video sync, persistence; drives the Rubber Band engine.
-- `Sources/PracticePad/RubberBandEngine.swift` — `AVAudioSourceNode` pull loop feeding decoded audio through Rubber Band.
+- `Sources/PracticePad/AudioPlayer.swift` — transport, seeking, A-B and saved loops, EQ/balance, video sync, persistence; drives the Rubber Band engine.
+- `Sources/PracticePad/RubberBandEngine.swift` — `AVAudioSourceNode` pull loop feeding decoded audio through Rubber Band, plus the EQ node and channel-mode mixing.
+- `Sources/PracticePad/SavedLoop.swift` — the saved-loop model (name + start/end), persisted per file.
 - `Sources/CRubberBand/` — module map exposing Rubber Band's C API (`rubberband-c.h`) to Swift; the static archives are linked by `Package.swift`.
 - `Sources/PracticePad/FileImporter.swift` — open panel and supported audio/video types.
 - `scripts/make_app.sh` — packages the `.app` bundle.
