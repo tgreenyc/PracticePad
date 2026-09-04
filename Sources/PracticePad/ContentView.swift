@@ -448,40 +448,69 @@ struct ContentView: View {
         .padding(4)
     }
 
-    /// The "Mix" section: a graphic EQ alongside the channel-isolation picker.
+    /// The "Mix" section: a graphic EQ on the left and the balance / channel
+    /// picker on the right, separated by a vertical divider.
     private var mixSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Text("Equalizer")
-                    .font(.subheadline).bold()
-                Spacer()
+        HStack(alignment: .top, spacing: 16) {
+            // EQ on the left, taking half the box width.
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("Equalizer")
+                        .font(.subheadline).bold()
+                    Spacer()
+                    Text("Bypass")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Toggle("Bypass", isOn: $player.eqBypassed)
+                        .toggleStyle(.switch)
+                        .controlSize(.mini)
+                        .labelsHidden()
+                        .disabled(player.audioFileURL == nil)
+                        .help("Bypass the EQ without losing your settings (A/B compare)")
+
+                    Button {
+                        player.resetEQ()
+                    } label: {
+                        Label("Flat", systemImage: "arrow.counterclockwise")
+                    }
+                    .controlSize(.small)
+                    .help("Reset all EQ bands to 0 dB")
+                    .disabled(player.audioFileURL == nil || !player.isEQActive)
+                }
+                equalizer
+                    .opacity(player.eqBypassed ? 0.4 : 1)
             }
-            equalizer
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             Divider()
 
-            HStack {
-                Text("Channel")
+            // Balance on the right, taking the other half.
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Balance")
                     .font(.subheadline).bold()
-                Spacer()
-            }
-            Picker("Channel mode", selection: $player.channelMode) {
-                ForEach(ChannelMode.allCases) { mode in
-                    Text(Self.channelModeLabel(mode)).tag(mode)
+                Picker("Balance", selection: $player.channelMode) {
+                    ForEach(ChannelMode.allCases) { mode in
+                        Text(Self.channelModeLabel(mode)).tag(mode)
+                    }
                 }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .disabled(player.audioFileURL == nil)
+                .help("Isolate parts of the mix by stereo position. Left/Right play one channel through both speakers. Karaoke cancels centered content — often the lead vocal, but results vary by recording and it collapses to mono.")
+                Spacer(minLength: 0)
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .disabled(player.audioFileURL == nil)
-            .help("Isolate parts of the mix by stereo position (e.g. drop one side, or cancel centered vocals)")
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(4)
     }
 
-    /// A row of vertical band sliders forming a graphic EQ.
+    /// A row of vertical band sliders forming a graphic EQ. The slider height
+    /// is kept short so the whole Mix box (including the Channel picker below
+    /// it) fits without scrolling, even on a 14-inch screen.
     private var equalizer: some View {
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .top, spacing: 4) {
+            Spacer(minLength: 0)
             ForEach(Array(player.eqFrequencies.enumerated()), id: \.offset) { index, freq in
                 VStack(spacing: 4) {
                     Text(Self.eqGainLabel(player.eqGains[index]))
@@ -489,6 +518,10 @@ struct ContentView: View {
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
 
+                    // A horizontal slider rotated to vertical. The slider is
+                    // laid out `trackLength` wide, then rotated; the outer
+                    // frame is sized to the rotated footprint (thin & tall) so
+                    // neighbouring bands pack tightly.
                     Slider(
                         value: Binding(
                             get: { player.eqGains[index] },
@@ -497,17 +530,19 @@ struct ContentView: View {
                         in: AudioPlayer.eqGainRange,
                         step: 0.5
                     )
+                    .frame(width: Self.eqTrackLength)
                     .rotationEffect(.degrees(-90))
-                    .frame(width: 90)
-                    .frame(height: 90)
+                    .frame(width: Self.eqBandWidth, height: Self.eqTrackLength)
 
                     Text(Self.eqFreqLabel(freq))
                         .font(.caption2)
                         .foregroundStyle(.secondary)
+                        .fixedSize()
                 }
-                .frame(maxWidth: .infinity)
             }
+            Spacer(minLength: 0)
         }
+        .frame(maxWidth: .infinity)
         .disabled(player.audioFileURL == nil)
         .help("Boost or cut frequency ranges (e.g. reduce bass, or bring vocals forward)")
     }
@@ -518,6 +553,11 @@ struct ContentView: View {
         guard let time, player.duration > 0 else { return nil }
         return time / player.duration
     }
+
+    /// EQ band geometry: `eqTrackLength` is each (vertical) slider's visual
+    /// height; `eqBandWidth` is the narrow column each band occupies.
+    private static let eqTrackLength: CGFloat = 56
+    private static let eqBandWidth: CGFloat = 26
 
     private static let speedPresets: [Double] = [0.5, 0.75, 1.0]
 
@@ -542,7 +582,7 @@ struct ContentView: View {
         case .stereo: return "Stereo"
         case .leftOnly: return "Left"
         case .rightOnly: return "Right"
-        case .removeCenter: return "No Center"
+        case .removeCenter: return "Karaoke"
         }
     }
 

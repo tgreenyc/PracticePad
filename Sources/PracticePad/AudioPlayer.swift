@@ -56,6 +56,14 @@ final class AudioPlayer: ObservableObject {
     /// Per-band EQ gains in dB (one per `RubberBandEngine.eqFrequencies` band).
     /// Set individual bands via `setEQGain(band:dB:)` so only that band updates.
     @Published private(set) var eqGains: [Double]
+    /// When true the EQ is bypassed (audio passes through flat) but the band
+    /// gains are preserved, so it can be toggled back on unchanged.
+    @Published var eqBypassed: Bool = false {
+        didSet {
+            engine.setEQBypassed(eqBypassed)
+            UserDefaults.standard.set(eqBypassed, forKey: Self.eqBypassedKey)
+        }
+    }
 
     /// Center frequencies of the EQ bands, exposed for labeling in the UI.
     var eqFrequencies: [Float] { RubberBandEngine.eqFrequencies }
@@ -66,6 +74,7 @@ final class AudioPlayer: ObservableObject {
     private static let pitchKey = "PracticePad.pitchSemitones"
     private static let channelModeKey = "PracticePad.channelMode"
     private static let eqGainsKey = "PracticePad.eqGains"
+    private static let eqBypassedKey = "PracticePad.eqBypassed"
     private static let lastFileKey = "PracticePad.lastFilePath"
     private static let loopStartKey = "PracticePad.loopStart"
     private static let loopEndKey = "PracticePad.loopEnd"
@@ -113,6 +122,7 @@ final class AudioPlayer: ObservableObject {
         } else {
             eqGains = Array(repeating: 0, count: bandCount)
         }
+        eqBypassed = defaults.bool(forKey: Self.eqBypassedKey)
 
         if defaults.object(forKey: Self.rateKey) != nil {
             rate = min(max(defaults.double(forKey: Self.rateKey), 0.25), 2.0)
@@ -145,11 +155,18 @@ final class AudioPlayer: ObservableObject {
         UserDefaults.standard.set(eqGains, forKey: Self.eqGainsKey)
     }
 
-    /// Push every stored EQ gain into the engine (after init or a graph rebuild).
+    /// Push every stored EQ gain and the bypass state into the engine (after
+    /// init or a graph rebuild).
     private func applyAllEQGains() {
         for (i, g) in eqGains.enumerated() {
             engine.setEQGain(band: i, dB: Float(g))
         }
+        engine.setEQBypassed(eqBypassed)
+    }
+
+    /// Flatten every EQ band back to 0 dB (leaves speed/pitch/balance alone).
+    func resetEQ() {
+        for i in eqGains.indices { setEQGain(band: i, dB: 0) }
     }
 
     /// True when any EQ band is boosted or cut from flat.
