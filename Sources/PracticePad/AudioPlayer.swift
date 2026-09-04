@@ -45,9 +45,18 @@ final class AudioPlayer: ObservableObject {
             UserDefaults.standard.set(pitchSemitones, forKey: Self.pitchKey)
         }
     }
+    /// How the stereo output is remixed (stereo / left-only / right-only /
+    /// remove-center), for isolating parts of a mix by stereo position.
+    @Published var channelMode: ChannelMode = .stereo {
+        didSet {
+            engine.setChannelMode(channelMode)
+            UserDefaults.standard.set(channelMode.rawValue, forKey: Self.channelModeKey)
+        }
+    }
 
     private static let rateKey = "PracticePad.rate"
     private static let pitchKey = "PracticePad.pitchSemitones"
+    private static let channelModeKey = "PracticePad.channelMode"
     private static let lastFileKey = "PracticePad.lastFilePath"
     private static let loopStartKey = "PracticePad.loopStart"
     private static let loopEndKey = "PracticePad.loopEnd"
@@ -88,11 +97,16 @@ final class AudioPlayer: ObservableObject {
             rate = min(max(defaults.double(forKey: Self.rateKey), 0.25), 2.0)
         }
         pitchSemitones = min(max(defaults.integer(forKey: Self.pitchKey), -12), 12)
+        if let raw = defaults.string(forKey: Self.channelModeKey),
+           let mode = ChannelMode(rawValue: raw) {
+            channelMode = mode
+        }
         recentFiles = (defaults.array(forKey: Self.recentFilesKey) as? [String] ?? [])
             .map { URL(fileURLWithPath: $0) }
 
         engine.setTimeRatio(1.0 / rate)
         engine.setPitchScale(pow(2.0, Double(pitchSemitones) / 12.0))
+        engine.setChannelMode(channelMode)
         engine.onReachedEnd = { [weak self] in
             self?.handleReachedEnd()
         }
@@ -158,6 +172,7 @@ final class AudioPlayer: ObservableObject {
                 initialTimeRatio: 1.0 / rate,
                 initialPitchScale: pow(2.0, Double(pitchSemitones) / 12.0)
             )
+            engine.setChannelMode(channelMode)
 
             // Grab any saved loop for this exact file before clearing state.
             let restoredLoop = savedLoop(for: url, duration: duration)
@@ -291,10 +306,11 @@ final class AudioPlayer: ObservableObject {
         }
     }
 
-    /// Restore the default speed and pitch.
+    /// Restore the default speed, pitch, and channel mode.
     func resetPlayback() {
         rate = 1.0
         pitchSemitones = 0
+        channelMode = .stereo
     }
 
     func stop() {

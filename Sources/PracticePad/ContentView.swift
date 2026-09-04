@@ -424,6 +424,21 @@ struct ContentView: View {
             .disabled(player.audioFileURL == nil)
 
             HStack {
+                Text("Channel")
+                Spacer()
+            }
+
+            Picker("Channel mode", selection: $player.channelMode) {
+                ForEach(ChannelMode.allCases) { mode in
+                    Text(Self.channelModeLabel(mode)).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .disabled(player.audioFileURL == nil)
+            .help("Isolate parts of the mix by stereo position (e.g. drop one side, or cancel centered vocals)")
+
+            HStack {
                 Spacer()
                 Button {
                     player.resetPlayback()
@@ -431,8 +446,12 @@ struct ContentView: View {
                     Label("Reset", systemImage: "arrow.counterclockwise")
                 }
                 .controlSize(.small)
-                .help("Reset speed and pitch (⌘R)")
-                .disabled(abs(player.rate - 1.0) < 0.0001 && player.pitchSemitones == 0)
+                .help("Reset speed, pitch, and channel mode (⌘R)")
+                .disabled(
+                    abs(player.rate - 1.0) < 0.0001
+                        && player.pitchSemitones == 0
+                        && player.channelMode == .stereo
+                )
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -450,6 +469,16 @@ struct ContentView: View {
 
     private static func speedLabel(_ value: Double) -> String {
         value == 1.0 ? "1×" : String(format: "%g×", value)
+    }
+
+    /// Short label for each channel mode, shown in the segmented picker.
+    private static func channelModeLabel(_ mode: ChannelMode) -> String {
+        switch mode {
+        case .stereo: return "Stereo"
+        case .leftOnly: return "Left"
+        case .rightOnly: return "Right"
+        case .removeCenter: return "No Center"
+        }
     }
 
     private static func timeString(_ time: TimeInterval) -> String {

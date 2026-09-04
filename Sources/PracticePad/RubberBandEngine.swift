@@ -16,6 +16,22 @@ import Foundation
 /// that advances as Rubber Band consumes input. `AudioPlayer` maps that to the
 /// on-screen clock, so seek/loop/video-sync logic stays authoritative exactly
 /// as it did with `AVAudioUnitTimePitch`.
+/// How the stereo output is remixed before playback. Used to isolate parts of
+/// a mix by stereo position — helpful for practicing along to a recording.
+enum ChannelMode: String, CaseIterable, Identifiable {
+    /// Play the mix unchanged.
+    case stereo
+    /// Play the left channel through both speakers (drops right-panned parts).
+    case leftOnly
+    /// Play the right channel through both speakers (drops left-panned parts).
+    case rightOnly
+    /// Play (L − R) through both speakers, cancelling centered content such as
+    /// lead vocals (karaoke-style). Imperfect and collapses to mono.
+    case removeCenter
+
+    var id: String { rawValue }
+}
+
 final class RubberBandEngine {
     /// Output format of the graph (matches the decoded file: sample rate +
     /// channel count, non-interleaved float).
@@ -62,6 +78,11 @@ final class RubberBandEngine {
     private var loopActive = false
     private var loopStartFrame: AVAudioFramePosition = 0
     private var loopEndFrame: AVAudioFramePosition = 0
+
+    // How to remix the stereo output in the render callback. Lets the user
+    // isolate content by stereo position (e.g. drop instruments panned to one
+    // side, or cancel centered vocals). Only meaningful for stereo files.
+    private var channelMode: ChannelMode = .stereo
 
     /// Scratch buffers reused by the render callback to avoid per-callback
     /// allocation. Sized to the max render block in `rebuildGraph`, off the
@@ -234,6 +255,14 @@ final class RubberBandEngine {
         if let s = stretcher { rubberband_set_pitch_scale(s, scale) }
     }
 
+    /// Choose how the stereo output is remixed (stereo / left-only / right-only
+    /// / remove-center). No effect on mono files.
+    func setChannelMode(_ mode: ChannelMode) {
+        stateLock.lock()
+        channelMode = mode
+        stateLock.unlock()
+    }
+
     /// Poll for a deferred end-of-track signal (set by the render thread) and
     /// fire `onReachedEnd` once. Call from the main-thread display timer.
     func drainPendingEnd() {
@@ -312,8 +341,38 @@ final class RubberBandEngine {
             isRunning = false
         }
 
+        // Remix the stereo output per the selected channel mode. Skipped for
+        // plain stereo or non-stereo files, so normal playback is untouched.
+        if ch >= 2, channelMode != .stereo {
+            remixStereo(ablPtr, mode: channelMode, frames: frameCount)
+        }
+
         stateLock.unlock()
         return noErr
+    }
+
+    /// Rewrite the first two output channels in place according to `mode`. Each
+    /// mode produces a mono result sent to both speakers, so the isolated or
+    /// centered-removed signal is heard on both sides.
+    private func remixStereo(
+        _ ablPtr: UnsafeMutableAudioBufferListPointer,
+        mode: ChannelMode,
+        frames: Int
+    ) {
+        guard ablPtr.count >= 2,
+              let left = ablPtr[0].mData?.assumingMemoryBound(to: Float.self),
+              let right = ablPtr[1].mData?.assumingMemoryBound(to: Float.self) else { return }
+        for i in 0..<frames {
+            let mixed: Float
+            switch mode {
+            case .stereo: return // handled by caller; here for exhaustiveness
+            case .leftOnly: mixed = left[i]
+            case .rightOnly: mixed = right[i]
+            case .removeCenter: mixed = left[i] - right[i]
+            }
+            left[i] = mixed
+            right[i] = mixed
+        }
     }
 
     /// Push `frames` from `inputScratch` into the stretcher. Recursively opens
