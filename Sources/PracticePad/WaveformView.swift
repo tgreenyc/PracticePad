@@ -75,6 +75,7 @@ struct WaveformView: View {
         ZStack(alignment: .leading) {
             Color(nsColor: .textBackgroundColor)
 
+            // Region fills sit behind the waveform so the bars show through.
             savedRegionBands(width: width, height: height)
             loopHighlight(width: width, height: height)
             dragPreview(height: height)
@@ -94,44 +95,56 @@ struct WaveformView: View {
                 .fill(Color.primary)
                 .frame(width: 1.5, height: height)
                 .offset(x: CGFloat(progress) * width)
+
+            // Labels are drawn last so the waveform never covers them.
+            savedRegionLabels(width: width, height: height)
         }
     }
 
-    /// Bands for saved loops, each with its name at the top-left. Uses a
-    /// lighter version of the active loop's yellow so saved regions read in the
-    /// same visual language while the active (brighter) A–B highlight, drawn on
-    /// top, stays dominant. Names are dark red for contrast against the fill.
+    /// Fills for saved loops: a lighter version of the active loop's yellow so
+    /// saved regions read in the same visual language. Drawn behind the
+    /// waveform (bars show through) and beneath the active A–B highlight.
     @ViewBuilder
     private func savedRegionBands(width: CGFloat, height: CGFloat) -> some View {
         ForEach(regions) { region in
             let x = CGFloat(min(max(0, region.start), 1)) * width
             let w = CGFloat(min(max(0, region.end - region.start), 1)) * width
-            ZStack(alignment: .topLeading) {
-                Rectangle()
-                    .fill(Color.yellow.opacity(0.15))
-                    .overlay(alignment: .leading) {
-                        Rectangle().fill(Color.yellow.opacity(0.6)).frame(width: 1)
-                    }
-                    .overlay(alignment: .trailing) {
-                        Rectangle().fill(Color.yellow.opacity(0.6)).frame(width: 1)
-                    }
-                Text(region.name)
-                    .font(.system(size: 11, weight: .heavy))
-                    .foregroundStyle(Color(red: 0.55, green: 0.0, blue: 0.0))
-                    .lineLimit(1)
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 1)
-                    .background(
-                        RoundedRectangle(cornerRadius: 3)
-                            .fill(Color.white.opacity(0.85))
-                    )
-                    .padding(.horizontal, 2)
-                    .padding(.top, 2)
-            }
-            .frame(width: max(w, 1), height: height, alignment: .topLeading)
-            .clipped()
-            .offset(x: x)
-            .allowsHitTesting(false)
+            Rectangle()
+                .fill(Color.yellow.opacity(0.15))
+                .overlay(alignment: .leading) {
+                    Rectangle().fill(Color.yellow.opacity(0.6)).frame(width: 1)
+                }
+                .overlay(alignment: .trailing) {
+                    Rectangle().fill(Color.yellow.opacity(0.6)).frame(width: 1)
+                }
+                .frame(width: max(w, 1), height: height)
+                .offset(x: x)
+                .allowsHitTesting(false)
+        }
+    }
+
+    /// Saved-loop name labels, drawn last (on top of the waveform) so the bars
+    /// never cover them. Dark-red heavy text on a white pill for contrast.
+    @ViewBuilder
+    private func savedRegionLabels(width: CGFloat, height: CGFloat) -> some View {
+        ForEach(regions) { region in
+            let x = CGFloat(min(max(0, region.start), 1)) * width
+            let w = CGFloat(min(max(0, region.end - region.start), 1)) * width
+            Text(region.name)
+                .font(.system(size: 11, weight: .heavy))
+                .foregroundStyle(Color(red: 0.55, green: 0.0, blue: 0.0))
+                .lineLimit(1)
+                .padding(.horizontal, 4)
+                .padding(.vertical, 1)
+                .background(
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(Color.white.opacity(0.9))
+                )
+                .frame(width: max(w, 1), height: height, alignment: .topLeading)
+                .padding(.top, 2)
+                .clipped()
+                .offset(x: x)
+                .allowsHitTesting(false)
         }
     }
 
