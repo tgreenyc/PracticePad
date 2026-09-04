@@ -53,10 +53,19 @@ final class AudioPlayer: ObservableObject {
             UserDefaults.standard.set(channelMode.rawValue, forKey: Self.channelModeKey)
         }
     }
+    /// Per-band EQ gains in dB (one per `RubberBandEngine.eqFrequencies` band).
+    /// Set individual bands via `setEQGain(band:dB:)` so only that band updates.
+    @Published private(set) var eqGains: [Double]
+
+    /// Center frequencies of the EQ bands, exposed for labeling in the UI.
+    var eqFrequencies: [Float] { RubberBandEngine.eqFrequencies }
+    /// Range each EQ band slider spans, in dB.
+    static let eqGainRange: ClosedRange<Double> = -12...12
 
     private static let rateKey = "PracticePad.rate"
     private static let pitchKey = "PracticePad.pitchSemitones"
     private static let channelModeKey = "PracticePad.channelMode"
+    private static let eqGainsKey = "PracticePad.eqGains"
     private static let lastFileKey = "PracticePad.lastFilePath"
     private static let loopStartKey = "PracticePad.loopStart"
     private static let loopEndKey = "PracticePad.loopEnd"
@@ -93,6 +102,18 @@ final class AudioPlayer: ObservableObject {
         // Restore saved speed/pitch (assignments in init don't fire didSet, so
         // apply them to the engine explicitly below).
         let defaults = UserDefaults.standard
+        let bandCount = RubberBandEngine.eqFrequencies.count
+
+        // Restore EQ gains (a stored non-optional, so seed it before anything
+        // else in init). Fall back to flat if the saved array doesn't match the
+        // current band count.
+        let savedGains = defaults.array(forKey: Self.eqGainsKey) as? [Double]
+        if let savedGains, savedGains.count == bandCount {
+            eqGains = savedGains.map { min(max($0, Self.eqGainRange.lowerBound), Self.eqGainRange.upperBound) }
+        } else {
+            eqGains = Array(repeating: 0, count: bandCount)
+        }
+
         if defaults.object(forKey: Self.rateKey) != nil {
             rate = min(max(defaults.double(forKey: Self.rateKey), 0.25), 2.0)
         }
@@ -107,11 +128,33 @@ final class AudioPlayer: ObservableObject {
         engine.setTimeRatio(1.0 / rate)
         engine.setPitchScale(pow(2.0, Double(pitchSemitones) / 12.0))
         engine.setChannelMode(channelMode)
+        applyAllEQGains()
         engine.onReachedEnd = { [weak self] in
             self?.handleReachedEnd()
         }
 
         restoreLastSession()
+    }
+
+    /// Set one EQ band's gain (dB), updating the engine and persisting.
+    func setEQGain(band index: Int, dB: Double) {
+        guard index >= 0, index < eqGains.count else { return }
+        let clamped = min(max(dB, Self.eqGainRange.lowerBound), Self.eqGainRange.upperBound)
+        eqGains[index] = clamped
+        engine.setEQGain(band: index, dB: Float(clamped))
+        UserDefaults.standard.set(eqGains, forKey: Self.eqGainsKey)
+    }
+
+    /// Push every stored EQ gain into the engine (after init or a graph rebuild).
+    private func applyAllEQGains() {
+        for (i, g) in eqGains.enumerated() {
+            engine.setEQGain(band: i, dB: Float(g))
+        }
+    }
+
+    /// True when any EQ band is boosted or cut from flat.
+    var isEQActive: Bool {
+        eqGains.contains { abs($0) > 0.0001 }
     }
 
     /// Reopen the file from the previous session, if it still exists. Its loop
@@ -173,6 +216,7 @@ final class AudioPlayer: ObservableObject {
                 initialPitchScale: pow(2.0, Double(pitchSemitones) / 12.0)
             )
             engine.setChannelMode(channelMode)
+            applyAllEQGains()
 
             // Grab any saved loop for this exact file before clearing state.
             let restoredLoop = savedLoop(for: url, duration: duration)
@@ -306,11 +350,12 @@ final class AudioPlayer: ObservableObject {
         }
     }
 
-    /// Restore the default speed, pitch, and channel mode.
+    /// Restore the default speed, pitch, channel mode, and EQ.
     func resetPlayback() {
         rate = 1.0
         pitchSemitones = 0
         channelMode = .stereo
+        for i in eqGains.indices { setEQGain(band: i, dB: 0) }
     }
 
     func stop() {

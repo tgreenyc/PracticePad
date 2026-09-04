@@ -47,6 +47,12 @@ final class RubberBandEngine {
     private let engine = AVAudioEngine()
     private var sourceNode: AVAudioSourceNode?
 
+    /// Fixed center frequencies (Hz) for the graphic EQ bands, low to high.
+    static let eqFrequencies: [Float] = [60, 250, 1_000, 4_000, 12_000]
+    /// Multi-band parametric EQ inserted between the source node and the mixer.
+    /// Bands are configured once in `setupEQ`; gains are driven by `setEQGain`.
+    private let eq = AVAudioUnitEQ(numberOfBands: RubberBandEngine.eqFrequencies.count)
+
     /// Decoded, de-interleaved sample data: one `[Float]` per channel.
     private var channels: [[Float]] = []
 
@@ -93,11 +99,32 @@ final class RubberBandEngine {
     // MARK: - Lifecycle
 
     init() {
+        setupEQ()
         // Don't start the engine here: with no nodes attached yet, the graph
         // is empty and `AVAudioEngine.start()` raises an Objective-C exception
         // (which Swift's `try?` can't catch, aborting the process). The engine
         // is started in `rebuildGraph`, once a source node is connected to the
         // mixer.
+    }
+
+    /// Configure the EQ bands once: fixed center frequencies, flat (0 dB) gain.
+    /// The outer bands use shelving filters and the inner ones are parametric,
+    /// which gives a natural graphic-EQ response across the spectrum.
+    private func setupEQ() {
+        let freqs = Self.eqFrequencies
+        for (i, band) in eq.bands.enumerated() where i < freqs.count {
+            band.frequency = freqs[i]
+            band.bypass = false
+            band.gain = 0
+            if i == 0 {
+                band.filterType = .lowShelf
+            } else if i == freqs.count - 1 {
+                band.filterType = .highShelf
+            } else {
+                band.filterType = .parametric
+                band.bandwidth = 1.0 // octaves
+            }
+        }
     }
 
     /// Decode `file` fully into memory and (re)build the graph + stretcher for
@@ -180,7 +207,13 @@ final class RubberBandEngine {
         }
         sourceNode = node
         engine.attach(node)
-        engine.connect(node, to: engine.mainMixerNode, format: fmt)
+
+        // Insert the EQ between the source and the mixer: source -> eq -> mixer.
+        // The EQ node is attached once and reconnected to the file's format on
+        // each (re)build so its bands operate at the right sample rate.
+        if eq.engine == nil { engine.attach(eq) }
+        engine.connect(node, to: eq, format: fmt)
+        engine.connect(eq, to: engine.mainMixerNode, format: fmt)
 
         // Now that the graph has a node connected to the mixer, it's safe to
         // start. The render callback emits silence while `isRunning` is false,
@@ -261,6 +294,16 @@ final class RubberBandEngine {
         stateLock.lock()
         channelMode = mode
         stateLock.unlock()
+    }
+
+    /// Number of EQ bands.
+    var eqBandCount: Int { eq.bands.count }
+
+    /// Set the gain (in dB) of one EQ band. Safe to call from the main thread;
+    /// `AVAudioUnitEQ` applies the change without disrupting the render thread.
+    func setEQGain(band index: Int, dB: Float) {
+        guard index >= 0, index < eq.bands.count else { return }
+        eq.bands[index].gain = max(-24, min(24, dB))
     }
 
     /// Poll for a deferred end-of-track signal (set by the render thread) and

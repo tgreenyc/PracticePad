@@ -67,6 +67,10 @@ struct ContentView: View {
                     speedPitchSection
                 }
 
+                GroupBox(label: Label("Mix", systemImage: "dial.medium")) {
+                    mixSection
+                }
+
                 if let errorMessage = player.errorMessage {
                     Text(errorMessage)
                         .foregroundColor(.red)
@@ -431,19 +435,36 @@ struct ContentView: View {
                     Label("Reset", systemImage: "arrow.counterclockwise")
                 }
                 .controlSize(.small)
-                .help("Reset speed, pitch, and channel mode (⌘R)")
+                .help("Reset speed, pitch, channel mode, and EQ (⌘R)")
                 .disabled(
                     abs(player.rate - 1.0) < 0.0001
                         && player.pitchSemitones == 0
                         && player.channelMode == .stereo
+                        && !player.isEQActive
                 )
             }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(4)
+    }
+
+    /// The "Mix" section: a graphic EQ alongside the channel-isolation picker.
+    private var mixSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Text("Equalizer")
+                    .font(.subheadline).bold()
+                Spacer()
+            }
+            equalizer
+
+            Divider()
 
             HStack {
                 Text("Channel")
+                    .font(.subheadline).bold()
                 Spacer()
             }
-
             Picker("Channel mode", selection: $player.channelMode) {
                 ForEach(ChannelMode.allCases) { mode in
                     Text(Self.channelModeLabel(mode)).tag(mode)
@@ -458,6 +479,39 @@ struct ContentView: View {
         .padding(4)
     }
 
+    /// A row of vertical band sliders forming a graphic EQ.
+    private var equalizer: some View {
+        HStack(alignment: .top, spacing: 12) {
+            ForEach(Array(player.eqFrequencies.enumerated()), id: \.offset) { index, freq in
+                VStack(spacing: 4) {
+                    Text(Self.eqGainLabel(player.eqGains[index]))
+                        .font(.caption2)
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+
+                    Slider(
+                        value: Binding(
+                            get: { player.eqGains[index] },
+                            set: { player.setEQGain(band: index, dB: $0) }
+                        ),
+                        in: AudioPlayer.eqGainRange,
+                        step: 0.5
+                    )
+                    .rotationEffect(.degrees(-90))
+                    .frame(width: 90)
+                    .frame(height: 90)
+
+                    Text(Self.eqFreqLabel(freq))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+            }
+        }
+        .disabled(player.audioFileURL == nil)
+        .help("Boost or cut frequency ranges (e.g. reduce bass, or bring vocals forward)")
+    }
+
     // MARK: - Helpers
 
     private func fraction(_ time: TimeInterval?) -> Double? {
@@ -469,6 +523,17 @@ struct ContentView: View {
 
     private static func speedLabel(_ value: Double) -> String {
         value == 1.0 ? "1×" : String(format: "%g×", value)
+    }
+
+    /// Format an EQ band gain as a signed dB value, e.g. "+3", "0", "-6".
+    private static func eqGainLabel(_ dB: Double) -> String {
+        let rounded = Int(dB.rounded())
+        return rounded > 0 ? "+\(rounded)" : "\(rounded)"
+    }
+
+    /// Format an EQ band center frequency, e.g. "60", "1k", "12k".
+    private static func eqFreqLabel(_ hz: Float) -> String {
+        hz >= 1000 ? "\(Int(hz / 1000))k" : "\(Int(hz))"
     }
 
     /// Short label for each channel mode, shown in the segmented picker.
