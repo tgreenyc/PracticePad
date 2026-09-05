@@ -583,14 +583,12 @@ final class AudioPlayer {
         }
     }
 
-    /// Restore the default speed, pitch, channel mode, and EQ.
+    /// Restore the default speed and pitch. Scoped to the Playback controls;
+    /// channel mode (Balance) and EQ live in the Mix section and are left alone.
     func resetPlayback() {
         rate = 1.0
         persistRate()
         pitchSemitones = 0
-        channelMode = .stereo
-        for i in eqGains.indices { setEQGain(band: i, dB: 0) }
-        persistEQGains()
     }
 
     func stop() {

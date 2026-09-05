@@ -558,12 +558,10 @@ struct ContentView: View {
                     Label("Reset", systemImage: "arrow.counterclockwise")
                 }
                 .controlSize(.small)
-                .help("Reset speed, pitch, channel mode, and EQ (⌘R)")
+                .help("Reset speed and pitch (⌘R)")
                 .disabled(
                     abs(player.rate - 1.0) < 0.0001
                         && player.pitchSemitones == 0
-                        && player.channelMode == .stereo
-                        && !player.isEQActive
                 )
             }
         }
