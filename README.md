@@ -41,11 +41,11 @@ Built with SwiftUI and AVFoundation. Time-stretching and pitch-shifting are done
 - All audio processing — speed, pitch, and A-B looping — applies to video files too. The picture reseeks to A at each loop wrap, so audio stays gapless while the image resyncs.
 
 ### Play and adjust
-- **Play/Pause** with the button or the **spacebar**; **Stop** with the button or ⌘.
+- **Play/Pause** with the button or the **spacebar**; **Stop** with the button or `⌘.`
 - Drag the **Speed** slider (or tap a preset) to slow the track down — pitch stays the same.
 - Drag the **Pitch** slider to transpose in semitones — speed stays the same.
 - **Speed up / slow down** in `0.05×` steps with `⌘+` / `⌘-`.
-- **Reset** (↺, or ⌘R) restores speed to `1.00x`, pitch to `0`, balance to stereo, and the EQ to flat.
+- **Reset** (↺, or `⌘R`) restores speed to `1.00x`, pitch to `0`, balance to stereo, and the EQ to flat.
 
 ### Seek
 - **Click** anywhere on the waveform, or drag the position slider, to jump to that spot.
@@ -59,10 +59,7 @@ Built with SwiftUI and AVFoundation. Time-stretching and pitch-shifting are done
   - Dragging **B** keeps playing from the current spot out to the new end, then loops.
 - **Clear** removes the loop.
 
-Jump back to the loop start anytime with **Go to A** (or the `Delete` key,
-easy to reach one-handed while playing) — handy for restarting a passage you're
-drilling. With no loop set, it jumps to the start of
-the track.
+Jump back to the loop start anytime with **Go to A** (or the `Delete` key, easy to reach one-handed while playing) — handy for restarting a passage you're drilling. With no loop set, it jumps to the start of the track.
 
 Behavior notes:
 - Seeking **inside** the loop keeps looping; seeking **outside** it plays straight through from the needle.
@@ -87,10 +84,10 @@ Behavior notes:
 | `Space` | Play / Pause |
 | `⌘.` | Stop |
 | `←` / `→` | Skip back / forward 1 second |
-| `⌘+` / `⌘-` | Speed up / slow down (0.05×) |
 | `Delete` | Go to loop start (A) |
 | `[` / `]` | Previous / next saved loop |
-| `⌘R` | Reset speed & pitch |
+| `⌘+` / `⌘-` | Speed up / slow down (0.05×) |
+| `⌘R` | Reset speed, pitch, balance, and EQ |
 | `Esc` | Exit full-screen video |
 
 > Menus and shortcuts are only available when running the built `.app` (see below) — not via `swift run`.
@@ -142,14 +139,22 @@ a commercial Rubber Band license).
 
 ## Project layout
 
-- `Package.swift` — Swift package manifest.
-- `Sources/PracticePad/PracticePadApp.swift` — app entry point and menu commands.
-- `Sources/PracticePad/ContentView.swift` — main UI, transport controls, drag-and-drop, resizable/full-screen video.
-- `Sources/PracticePad/WaveformView.swift` — waveform, seek, and loop handles.
+- `Package.swift` — Swift package manifest; links the Rubber Band static archives.
+- `Sources/PracticePad/PracticePadApp.swift` — app entry point, menu commands, and the About panel.
+- `Sources/PracticePad/ContentView.swift` — main UI: transport, waveform, loop/EQ/balance controls, drag-and-drop, resizable/full-screen video.
+- `Sources/PracticePad/WaveformView.swift` — waveform rendering, seek, loop handles, and saved-loop bands.
 - `Sources/PracticePad/VideoPlayerView.swift` — `AVPlayerLayer`-backed view for the video picture.
 - `Sources/PracticePad/AudioPlayer.swift` — transport, seeking, A-B and saved loops, EQ/balance, video sync, persistence; drives the Rubber Band engine.
 - `Sources/PracticePad/RubberBandEngine.swift` — `AVAudioSourceNode` pull loop feeding decoded audio through Rubber Band, plus the EQ node and channel-mode mixing.
 - `Sources/PracticePad/SavedLoop.swift` — the saved-loop model (name + start/end), persisted per file.
-- `Sources/CRubberBand/` — module map exposing Rubber Band's C API (`rubberband-c.h`) to Swift; the static archives are linked by `Package.swift`.
 - `Sources/PracticePad/FileImporter.swift` — open panel and supported audio/video types.
-- `scripts/make_app.sh` — packages the `.app` bundle.
+- `Sources/CRubberBand/` — module map exposing Rubber Band's C API (`rubberband-c.h`) to Swift.
+- `scripts/make_app.sh` — packages the self-contained `.app` bundle.
+
+## License
+
+PracticePad is licensed under the **GNU General Public License v3** (see
+[`LICENSE`](LICENSE)). It links the [Rubber Band Library](https://breakfastquay.com/rubberband/),
+which is GPL, so distributed builds must comply with the GPL — or use a
+commercial Rubber Band license from Breakfast Quay. libsamplerate is under the
+BSD-2-Clause license.
