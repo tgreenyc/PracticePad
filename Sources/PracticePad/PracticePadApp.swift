@@ -1,7 +1,18 @@
 import SwiftUI
 
+/// Disables macOS's automatic window tabbing. PracticePad is single-window and
+/// has no tabs, but AppKit otherwise injects "Show Tab Bar" / "Show All Tabs"
+/// into the View menu for any standard titled window. Turning tabbing off
+/// removes those dead menu items.
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        NSWindow.allowsAutomaticWindowTabbing = false
+    }
+}
+
 @main
 struct PracticePadApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var player = AudioPlayer()
 
     /// Acknowledgements shown in the About panel. Rubber Band is GPL, so its
@@ -34,7 +45,11 @@ struct PracticePadApp: App {
     }()
 
     var body: some Scene {
-        WindowGroup {
+        // A single `Window` (not `WindowGroup`) because PracticePad is a
+        // single-window app sharing one AudioPlayer. WindowGroup would add a
+        // File > New Window command that opens a redundant second view of the
+        // same player; `Window` omits it.
+        Window("PracticePad", id: "main") {
             ContentView(player: player)
                 .frame(minWidth: 500, minHeight: 400)
         }
