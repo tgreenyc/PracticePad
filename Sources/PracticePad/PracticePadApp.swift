@@ -106,6 +106,18 @@ struct PracticePadApp: App {
                 .keyboardShortcut(.delete, modifiers: [])
                 .disabled(!player.canJumpToLoopStart || player.isEditingText)
 
+                Button("Previous Loop") {
+                    player.previousLoop()
+                }
+                .keyboardShortcut("[", modifiers: [])
+                .disabled(!player.hasSavedLoops || player.isEditingText)
+
+                Button("Next Loop") {
+                    player.nextLoop()
+                }
+                .keyboardShortcut("]", modifiers: [])
+                .disabled(!player.hasSavedLoops || player.isEditingText)
+
                 Button("Skip Back 1 Second") {
                     player.skip(by: -AudioPlayer.skipInterval)
                 }

@@ -438,9 +438,31 @@ struct ContentView: View {
     private var savedLoopsList: some View {
         VStack(alignment: .leading, spacing: 4) {
             Divider()
-            Text("Saved Loops")
-                .font(.caption).bold()
-                .foregroundStyle(.secondary)
+            HStack {
+                Text("Saved Loops")
+                    .font(.caption).bold()
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button {
+                    player.previousLoop()
+                } label: {
+                    Image(systemName: "chevron.left")
+                }
+                .buttonStyle(.borderless)
+                .controlSize(.small)
+                .disabled(!player.hasSavedLoops)
+                .help("Previous loop ([)")
+
+                Button {
+                    player.nextLoop()
+                } label: {
+                    Image(systemName: "chevron.right")
+                }
+                .buttonStyle(.borderless)
+                .controlSize(.small)
+                .disabled(!player.hasSavedLoops)
+                .help("Next loop (])")
+            }
 
             ForEach(player.savedLoops) { loop in
                 HStack(spacing: 8) {

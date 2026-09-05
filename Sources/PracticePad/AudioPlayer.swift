@@ -327,6 +327,47 @@ final class AudioPlayer: ObservableObject {
         jumpToLoopStart()
     }
 
+    /// True when there are saved loops to navigate.
+    var hasSavedLoops: Bool { !savedLoops.isEmpty }
+
+    /// Index of the saved loop currently loaded into the active A–B region, if
+    /// any (matched by bounds). Used as the anchor for next/previous.
+    private var activeSavedLoopIndex: Int? {
+        guard let start = loopStart, let end = loopEnd else { return nil }
+        let eps = 0.001
+        return savedLoops.firstIndex {
+            abs($0.start - start) < eps && abs($0.end - end) < eps
+        }
+    }
+
+    /// Recall the next saved loop (wrapping past the end). If no saved loop is
+    /// currently active, jumps to the first loop that starts at/after the
+    /// playhead (or the first loop if none do).
+    func nextLoop() {
+        guard !savedLoops.isEmpty else { return }
+        let target: Int
+        if let current = activeSavedLoopIndex {
+            target = (current + 1) % savedLoops.count
+        } else {
+            target = savedLoops.firstIndex { $0.start >= currentTime } ?? 0
+        }
+        recallLoop(savedLoops[target])
+    }
+
+    /// Recall the previous saved loop (wrapping past the start). If no saved
+    /// loop is currently active, jumps to the last loop that starts at/before
+    /// the playhead (or the last loop if none do).
+    func previousLoop() {
+        guard !savedLoops.isEmpty else { return }
+        let target: Int
+        if let current = activeSavedLoopIndex {
+            target = (current - 1 + savedLoops.count) % savedLoops.count
+        } else {
+            target = savedLoops.lastIndex { $0.start <= currentTime } ?? (savedLoops.count - 1)
+        }
+        recallLoop(savedLoops[target])
+    }
+
     /// Rename a saved loop as the user types. Stores the value verbatim —
     /// including a temporarily empty string mid-edit — so the field never
     /// fights the user. The blank-name rule is applied on commit, see

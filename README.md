@@ -73,6 +73,7 @@ Behavior notes:
 - Saved loops appear as labeled bands on the waveform (the active loop stays highlighted on top).
 - In the **Saved Loops** list, click the **↩** button to recall a loop (it loads into the A-B region and jumps to its start), the **pencil** to rename it, and the **trash** to delete it.
 - Renaming is gated behind the pencil so a name can't change by accident; press Enter or click elsewhere to save it.
+- Cycle between saved loops with the **‹ ›** buttons or the `[` / `]` keys — handy for moving between passages while playing. Navigation wraps around, and when no loop is active it picks the one nearest the playhead.
 
 ### Shape the sound (Mix)
 - **Equalizer** — a 10-band graphic EQ (31 Hz–16 kHz). Drag a band up or down to boost or cut that range. **Flat** resets all bands to 0 dB; the **Bypass** switch turns the EQ off without losing your settings, so you can A/B compare. An EQ shapes frequency *ranges* — useful for de-emphasizing, say, the bass — but it can't fully isolate an instrument, since instruments share frequencies.
@@ -88,6 +89,7 @@ Behavior notes:
 | `←` / `→` | Skip back / forward 1 second |
 | `⌘+` / `⌘-` | Speed up / slow down (0.05×) |
 | `Delete` | Go to loop start (A) |
+| `[` / `]` | Previous / next saved loop |
 | `⌘R` | Reset speed & pitch |
 | `Esc` | Exit full-screen video |
 
