@@ -623,10 +623,21 @@ struct ContentView: View {
                     .monospacedDigit()
             }
 
-            Slider(value: $player.rate, in: 0.25...2.0, step: 0.01, onEditingChanged: { editing in
-                // Persist once when the drag ends, not on every tick.
-                if !editing { player.persistRate() }
-            }) {
+            // Continuous slider (no `step:`) so SwiftUI doesn't build the
+            // ~175-item SliderMarkLabels tick layout, which was re-measured on
+            // every playhead update (10 Hz) and dominated CPU during playback.
+            // The 0.01 granularity is preserved by rounding in the setter.
+            Slider(
+                value: Binding(
+                    get: { player.rate },
+                    set: { player.rate = (($0 / 0.01).rounded()) * 0.01 }
+                ),
+                in: 0.25...2.0,
+                onEditingChanged: { editing in
+                    // Persist once when the drag ends, not on every tick.
+                    if !editing { player.persistRate() }
+                }
+            ) {
                 Text("Playback speed")
                     .padding(.trailing, 8)
             }
@@ -656,10 +667,13 @@ struct ContentView: View {
                     .monospacedDigit()
             }
 
+            // Continuous (no `step:`) to avoid the SwiftUI SliderMarkLabels tree
+            // and the AppKit NSSlider tick-mark relayout that ran on every
+            // playhead update. Rounding to whole semitones happens in the setter.
             Slider(value: Binding(
                 get: { Double(player.pitchSemitones) },
-                set: { player.pitchSemitones = Int($0) }
-            ), in: -12...12, step: 1) {
+                set: { player.pitchSemitones = Int($0.rounded()) }
+            ), in: -12...12) {
                 Text("Pitch shift")
                     .padding(.trailing, 8)
             }
@@ -742,13 +756,16 @@ struct ContentView: View {
                     // laid out `trackLength` wide, then rotated; the outer
                     // frame is sized to the rotated footprint (thin & tall) so
                     // neighbouring bands pack tightly.
+                    // Continuous (no `step:`) to avoid the SwiftUI SliderMarkLabels
+                    // tree and the AppKit NSSlider tick-mark relayout that ran on
+                    // every playhead update. 0.5 dB granularity is kept by
+                    // rounding in the setter.
                     Slider(
                         value: Binding(
                             get: { player.eqGains[index] },
-                            set: { player.setEQGain(band: index, dB: $0) }
+                            set: { player.setEQGain(band: index, dB: ($0 / 0.5).rounded() * 0.5) }
                         ),
                         in: AudioPlayer.eqGainRange,
-                        step: 0.5,
                         onEditingChanged: { editing in
                             // Persist once, when the drag ends — not on every tick.
                             if !editing { player.persistEQGains() }
