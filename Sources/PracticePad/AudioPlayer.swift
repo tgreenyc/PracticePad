@@ -47,6 +47,7 @@ final class AudioPlayer: ObservableObject {
             // Match the picture's playback rate so it stays in step; pitch shift
             // doesn't alter timing, so the video ignores it.
             videoPlayer?.rate = isPlaying ? Float(rate) : 0
+            updatePassthrough()
         }
     }
     @Published var pitchSemitones: Int = 0 {
@@ -54,6 +55,7 @@ final class AudioPlayer: ObservableObject {
             // Each semitone is a factor of 2^(1/12) in frequency.
             engine.setPitchScale(pow(2.0, Double(pitchSemitones) / 12.0))
             UserDefaults.standard.set(pitchSemitones, forKey: Self.pitchKey)
+            updatePassthrough()
         }
     }
     /// How the stereo output is remixed (stereo / left-only / right-only /
@@ -155,6 +157,7 @@ final class AudioPlayer: ObservableObject {
         engine.setPitchScale(pow(2.0, Double(pitchSemitones) / 12.0))
         engine.setChannelMode(channelMode)
         applyAllEQGains()
+        updatePassthrough()
         engine.onReachedEnd = { [weak self] in
             self?.handleReachedEnd()
         }
@@ -184,6 +187,13 @@ final class AudioPlayer: ObservableObject {
     /// preset is chosen, rather than on every slider tick.
     func persistRate() {
         UserDefaults.standard.set(rate, forKey: Self.rateKey)
+    }
+
+    /// Tell the engine to skip Rubber Band entirely when there's nothing for it
+    /// to do (speed 1.0× and pitch 0), which saves CPU/battery.
+    private func updatePassthrough() {
+        let isNeutral = abs(rate - 1.0) < 0.0001 && pitchSemitones == 0
+        engine.setPassthrough(isNeutral)
     }
 
     /// Amount the speed-up/slow-down shortcuts change the rate per press.
@@ -414,6 +424,7 @@ final class AudioPlayer: ObservableObject {
             )
             engine.setChannelMode(channelMode)
             applyAllEQGains()
+            updatePassthrough()
 
             // Restore the last active A–B loop for this file (keyed against
             // `lastFileKey`) before that key is overwritten below, then load
@@ -750,7 +761,9 @@ final class AudioPlayer: ObservableObject {
 
     private func startDisplayTimer() {
         guard displayTimer == nil else { return }
-        let timer = Timer(timeInterval: 0.05, repeats: true) { [weak self] _ in
+        // 10 Hz is plenty for a moving playhead and halves the continuous
+        // SwiftUI redraw load compared to 20 Hz.
+        let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
             self?.updateCurrentTime()
         }
         RunLoop.main.add(timer, forMode: .common)

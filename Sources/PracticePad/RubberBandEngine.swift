@@ -93,6 +93,13 @@ final class RubberBandEngine {
     // side, or cancel centered vocals). Only meaningful for stereo files.
     private var channelMode: ChannelMode = .stereo
 
+    /// When true, the render callback copies source frames straight to output
+    /// instead of running Rubber Band. Set by `AudioPlayer` when speed is 1.0×
+    /// and pitch is 0 — there's nothing for the stretcher to do, so skipping it
+    /// saves significant CPU/battery. Toggling it resets the stretcher so no
+    /// stale buffered output leaks when switching back.
+    private var passthrough = false
+
     /// Scratch buffers reused by the render callback to avoid per-callback
     /// allocation. Sized to the max render block in `rebuildGraph`, off the
     /// audio thread.
@@ -303,6 +310,18 @@ final class RubberBandEngine {
         if let s = stretcher { rubberband_set_pitch_scale(s, scale) }
     }
 
+    /// Enable/disable straight passthrough (skip Rubber Band). Call with `true`
+    /// only when time ratio and pitch scale are both 1.0. On any change, reset
+    /// the stretcher so it holds no stale output for when passthrough turns off.
+    func setPassthrough(_ enabled: Bool) {
+        stateLock.lock()
+        if enabled != passthrough {
+            passthrough = enabled
+            if let s = stretcher { rubberband_reset(s) }
+        }
+        stateLock.unlock()
+    }
+
     /// Choose how the stereo output is remixed (stereo / left-only / right-only
     /// / remove-center). No effect on mono files.
     func setChannelMode(_ mode: ChannelMode) {
@@ -352,41 +371,61 @@ final class RubberBandEngine {
         }
 
         var produced = 0
-        while produced < frameCount {
-            let avail = rubberband_available(s)
-            if avail > 0 {
-                let want = min(Int(avail), frameCount - produced)
-                for c in 0..<ch {
-                    if c < ablPtr.count, let base = ablPtr[c].mData?.assumingMemoryBound(to: Float.self) {
-                        outputPtrs[c] = base.advanced(by: produced)
-                    } else {
-                        outputPtrs[c] = nil
+        if passthrough {
+            // Copy source frames straight to output, honoring loop/linear via
+            // `fillInput` (which advances `readFrame` and sets `isFinal`).
+            while produced < frameCount {
+                if reachedSourceEnd { break }
+                let want = frameCount - produced
+                let (n, isFinal) = fillInput(chunk: min(want, inputScratch[0].count), channels: ch)
+                for c in 0..<ch where c < ablPtr.count {
+                    if let out = ablPtr[c].mData?.assumingMemoryBound(to: Float.self) {
+                        inputScratch[c].withUnsafeBufferPointer { src in
+                            out.advanced(by: produced).update(from: src.baseAddress!, count: n)
+                        }
                     }
                 }
-                let got = outputPtrs.withUnsafeMutableBufferPointer { ptr -> UInt32 in
-                    rubberband_retrieve(s, ptr.baseAddress!, UInt32(want))
+                produced += n
+                if isFinal { reachedSourceEnd = true }
+                if n == 0 { break }
+            }
+        } else {
+            while produced < frameCount {
+                let avail = rubberband_available(s)
+                if avail > 0 {
+                    let want = min(Int(avail), frameCount - produced)
+                    for c in 0..<ch {
+                        if c < ablPtr.count, let base = ablPtr[c].mData?.assumingMemoryBound(to: Float.self) {
+                            outputPtrs[c] = base.advanced(by: produced)
+                        } else {
+                            outputPtrs[c] = nil
+                        }
+                    }
+                    let got = outputPtrs.withUnsafeMutableBufferPointer { ptr -> UInt32 in
+                        rubberband_retrieve(s, ptr.baseAddress!, UInt32(want))
+                    }
+                    produced += Int(got)
+                    if got == 0 { break }
+                    continue
                 }
-                produced += Int(got)
-                if got == 0 { break }
-                continue
+
+                // Rubber Band needs more input. If we've already pushed the
+                // final block, there's no more source: drain done -> end.
+                if reachedSourceEnd {
+                    break
+                }
+
+                let need = Int(rubberband_get_samples_required(s))
+                let chunk = max(1, min(need == 0 ? 1024 : need, inputScratch[0].count))
+                let (framesRead, isFinal) = fillInput(chunk: chunk, channels: ch)
+
+                // Feed the freshly filled scratch into Rubber Band. The channel
+                // pointers must stay valid for the duration of `process`, so
+                // build the pointer array inside nested buffer-pointer scopes
+                // rather than letting a base address escape.
+                processInput(s, channels: ch, frames: framesRead, isFinal: isFinal)
+                if isFinal { reachedSourceEnd = true }
             }
-
-            // Rubber Band needs more input. If we've already pushed the final
-            // block, there's no more source: drain done -> end of track.
-            if reachedSourceEnd {
-                break
-            }
-
-            let need = Int(rubberband_get_samples_required(s))
-            let chunk = max(1, min(need == 0 ? 1024 : need, inputScratch[0].count))
-            let (framesRead, isFinal) = fillInput(chunk: chunk, channels: ch)
-
-            // Feed the freshly filled scratch into Rubber Band. The channel
-            // pointers must stay valid for the duration of `process`, so build
-            // the pointer array inside nested buffer-pointer scopes rather than
-            // letting a base address escape.
-            processInput(s, channels: ch, frames: framesRead, isFinal: isFinal)
-            if isFinal { reachedSourceEnd = true }
         }
 
         // If we produced less than a full block and the source is exhausted,
