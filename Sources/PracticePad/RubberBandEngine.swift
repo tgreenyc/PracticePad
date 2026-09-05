@@ -14,8 +14,8 @@ import Foundation
 ///
 /// The engine exposes an absolute *source* frame position (`sourceFramePosition`)
 /// that advances as Rubber Band consumes input. `AudioPlayer` maps that to the
-/// on-screen clock, so seek/loop/video-sync logic stays authoritative exactly
-/// as it did with `AVAudioUnitTimePitch`.
+/// on-screen clock, so seek/loop/video-sync logic stays authoritative.
+
 /// How the stereo output is remixed before playback. Used to isolate parts of
 /// a mix by stereo position — helpful for practicing along to a recording.
 enum ChannelMode: String, CaseIterable, Identifiable {
@@ -310,9 +310,6 @@ final class RubberBandEngine {
         channelMode = mode
         stateLock.unlock()
     }
-
-    /// Number of EQ bands.
-    var eqBandCount: Int { eq.bands.count }
 
     /// Set the gain (in dB) of one EQ band. Safe to call from the main thread;
     /// `AVAudioUnitEQ` applies the change without disrupting the render thread.
