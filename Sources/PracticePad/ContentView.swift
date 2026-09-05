@@ -3,7 +3,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct ContentView: View {
-    @ObservedObject var player: AudioPlayer
+    @Bindable var player: AudioPlayer
     @State private var isDropTargeted = false
     @State private var isFullScreen = false
     @State private var dragStartHeight: Double?
@@ -33,7 +33,7 @@ struct ContentView: View {
         .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
             handleDrop(providers)
         }
-        .onChange(of: focusedLoopID) { newValue in
+        .onChange(of: focusedLoopID) { _, newValue in
             // Mirror text-field focus into the player so the App's plain-key
             // Playback shortcuts pause while a loop name is being edited.
             player.isEditingText = (newValue != nil)
@@ -325,57 +325,14 @@ struct ContentView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    // The waveform + position scrubber + time labels are the only UI that reads
+    // `currentTime`, which the player republishes ~10x/sec during playback.
+    // They live in their own `View` (PlaybackPositionView) so SwiftUI confines
+    // that 10 Hz invalidation to this subview. If these controls were inlined
+    // here, every tick would re-evaluate the whole ContentView body (speed,
+    // pitch, EQ, loops) since `player` is observed at the object level.
     private var waveformSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            WaveformView(
-                samples: player.waveform,
-                progress: player.duration > 0 ? player.currentTime / player.duration : 0,
-                loopStart: fraction(player.loopStart),
-                loopEnd: fraction(player.loopEnd),
-                regions: savedLoopRegions,
-                emptyMessage: player.audioFileURL == nil
-                    ? "Drag an audio or video file here, or press ⌘O to open one"
-                    : "Analyzing waveform…",
-                onSeek: { player.seek(to: $0 * player.duration) },
-                onLoopSelect: { start, end in
-                    player.setLoopRegion(start: start * player.duration, end: end * player.duration)
-                },
-                onLoopStartDrag: { player.updateLoopStart($0 * player.duration) },
-                onLoopEndDrag: { player.updateLoopEnd($0 * player.duration) },
-                onLoopEditEnd: { isStart in player.commitLoopEdit(resetToStart: isStart) }
-            )
-            .frame(height: 96)
-            .disabled(player.audioFileURL == nil)
-
-            Slider(
-                value: Binding(
-                    get: { player.currentTime },
-                    set: { player.updateScrub(to: $0) }
-                ),
-                in: 0...max(player.duration, 0.01),
-                onEditingChanged: { editing in
-                    if editing {
-                        player.beginScrubbing()
-                    } else {
-                        player.endScrubbing(at: player.currentTime)
-                    }
-                }
-            ) {
-                Text("Playback position")
-            }
-            .disabled(player.audioFileURL == nil)
-
-            HStack {
-                Text(Self.timeString(player.currentTime))
-                Spacer()
-                Text(Self.timeString(player.duration))
-            }
-            .font(.caption)
-            .monospacedDigit()
-            .foregroundColor(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(4)
+        PlaybackPositionView(player: player)
     }
 
     private var loopSection: some View {
@@ -790,24 +747,6 @@ struct ContentView: View {
 
     // MARK: - Helpers
 
-    private func fraction(_ time: TimeInterval?) -> Double? {
-        guard let time, player.duration > 0 else { return nil }
-        return time / player.duration
-    }
-
-    /// The saved loops as fraction-based bands for the waveform.
-    private var savedLoopRegions: [WaveformRegion] {
-        guard player.duration > 0 else { return [] }
-        return player.savedLoops.map {
-            WaveformRegion(
-                id: $0.id,
-                name: $0.name,
-                start: $0.start / player.duration,
-                end: $0.end / player.duration
-            )
-        }
-    }
-
     /// EQ band geometry: `eqTrackLength` is each (vertical) slider's visual
     /// height; `eqBandWidth` is the narrow column each band occupies.
     private static let eqTrackLength: CGFloat = 56
@@ -840,7 +779,7 @@ struct ContentView: View {
         }
     }
 
-    private static func timeString(_ time: TimeInterval) -> String {
+    static func timeString(_ time: TimeInterval) -> String {
         guard time.isFinite, time >= 0 else { return "0:00" }
         let total = Int(time.rounded())
         return String(format: "%d:%02d", total / 60, total % 60)
@@ -861,6 +800,85 @@ struct ContentView: View {
             }
         }
         return true
+    }
+}
+
+/// The waveform, position scrubber, and time labels — the only controls that
+/// depend on `AudioPlayer.currentTime`, which is republished ~10x/sec during
+/// playback. Isolating them in their own `View` means each playhead tick only
+/// re-evaluates this body, not the whole ContentView (speed/pitch/EQ/loops).
+private struct PlaybackPositionView: View {
+    var player: AudioPlayer
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            WaveformView(
+                samples: player.waveform,
+                progress: player.duration > 0 ? player.currentTime / player.duration : 0,
+                loopStart: fraction(player.loopStart),
+                loopEnd: fraction(player.loopEnd),
+                regions: savedLoopRegions,
+                emptyMessage: player.audioFileURL == nil
+                    ? "Drag an audio or video file here, or press ⌘O to open one"
+                    : "Analyzing waveform…",
+                onSeek: { player.seek(to: $0 * player.duration) },
+                onLoopSelect: { start, end in
+                    player.setLoopRegion(start: start * player.duration, end: end * player.duration)
+                },
+                onLoopStartDrag: { player.updateLoopStart($0 * player.duration) },
+                onLoopEndDrag: { player.updateLoopEnd($0 * player.duration) },
+                onLoopEditEnd: { isStart in player.commitLoopEdit(resetToStart: isStart) }
+            )
+            .frame(height: 96)
+            .disabled(player.audioFileURL == nil)
+
+            Slider(
+                value: Binding(
+                    get: { player.currentTime },
+                    set: { player.updateScrub(to: $0) }
+                ),
+                in: 0...max(player.duration, 0.01),
+                onEditingChanged: { editing in
+                    if editing {
+                        player.beginScrubbing()
+                    } else {
+                        player.endScrubbing(at: player.currentTime)
+                    }
+                }
+            ) {
+                Text("Playback position")
+            }
+            .disabled(player.audioFileURL == nil)
+
+            HStack {
+                Text(ContentView.timeString(player.currentTime))
+                Spacer()
+                Text(ContentView.timeString(player.duration))
+            }
+            .font(.caption)
+            .monospacedDigit()
+            .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(4)
+    }
+
+    private func fraction(_ time: TimeInterval?) -> Double? {
+        guard let time, player.duration > 0 else { return nil }
+        return time / player.duration
+    }
+
+    /// The saved loops as fraction-based bands for the waveform.
+    private var savedLoopRegions: [WaveformRegion] {
+        guard player.duration > 0 else { return [] }
+        return player.savedLoops.map {
+            WaveformRegion(
+                id: $0.id,
+                name: $0.name,
+                start: $0.start / player.duration,
+                end: $0.end / player.duration
+            )
+        }
     }
 }
 

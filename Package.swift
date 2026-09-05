@@ -22,7 +22,7 @@ let samplerateLib = "\(brewPrefix)/opt/libsamplerate/lib/libsamplerate.a"
 
 let package = Package(
     name: "PracticePad",
-    platforms: [.macOS(.v13)],
+    platforms: [.macOS(.v14)],
     products: [
         .executable(name: "PracticePad", targets: ["PracticePad"])
     ],

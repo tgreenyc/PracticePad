@@ -1,40 +1,46 @@
 import AVFoundation
 import Foundation
+import Observation
 
-final class AudioPlayer: ObservableObject {
-    @Published private(set) var isPlaying = false
-    @Published private(set) var loadedFileName = "No file loaded"
-    @Published var errorMessage: String?
-    @Published private(set) var duration: TimeInterval = 0
-    @Published private(set) var currentTime: TimeInterval = 0
-    @Published private(set) var loopStart: TimeInterval? { didSet { persistLoop() } }
-    @Published private(set) var loopEnd: TimeInterval? { didSet { persistLoop() } }
-    @Published var loopEnabled = false { didSet { persistLoop() } }
+@Observable
+final class AudioPlayer {
+    private(set) var isPlaying = false
+    private(set) var loadedFileName = "No file loaded"
+    var errorMessage: String?
+    private(set) var duration: TimeInterval = 0
+    // Updated ~10x/sec during playback. With @Observable, only views that
+    // actually read `currentTime` (the waveform/scrubber) re-render on these
+    // updates — the rest of the UI is untouched, which is the whole point of
+    // migrating off ObservableObject/@Published (object-level invalidation).
+    private(set) var currentTime: TimeInterval = 0
+    private(set) var loopStart: TimeInterval? { didSet { persistLoop() } }
+    private(set) var loopEnd: TimeInterval? { didSet { persistLoop() } }
+    var loopEnabled = false { didSet { persistLoop() } }
     /// Named A–B regions saved for the currently loaded file, in time order.
     /// Recalling one loads its bounds into the active loop above.
-    @Published private(set) var savedLoops: [SavedLoop] = []
+    private(set) var savedLoops: [SavedLoop] = []
     /// True while the user is editing a text field (e.g. renaming a loop).
     /// Playback menu shortcuts that use plain keys (Space, Delete, arrows) are
     /// disabled while this is set, so typing doesn't trigger them.
-    @Published var isEditingText = false
+    var isEditingText = false
     /// Normalized (0...1) peak amplitudes, one per horizontal bucket, for
     /// drawing the waveform. Empty until extraction finishes.
-    @Published private(set) var waveform: [Float] = []
+    private(set) var waveform: [Float] = []
     /// Most-recently-opened files, newest first, for the Open Recent menu.
-    @Published private(set) var recentFiles: [URL] = []
+    private(set) var recentFiles: [URL] = []
     /// True when the loaded file carries a video track worth showing.
-    @Published private(set) var hasVideo = false
+    private(set) var hasVideo = false
     /// A muted `AVPlayer` for the picture only; audio always comes from the
     /// Rubber Band engine. Slaved to the audio clock so pitch/speed/loop stay
     /// authoritative.
-    @Published private(set) var videoPlayer: AVPlayer?
+    private(set) var videoPlayer: AVPlayer?
 
     /// True only when both loop points are set and in the correct order.
     var isLoopValid: Bool {
         guard let start = loopStart, let end = loopEnd else { return false }
         return end > start
     }
-    @Published var rate: Double = 1.0 {
+    var rate: Double = 1.0 {
         didSet {
             // Apply live (cheap), but don't persist here — writing to
             // UserDefaults on every slider tick during a drag is what makes the
@@ -50,7 +56,7 @@ final class AudioPlayer: ObservableObject {
             updatePassthrough()
         }
     }
-    @Published var pitchSemitones: Int = 0 {
+    var pitchSemitones: Int = 0 {
         didSet {
             // Each semitone is a factor of 2^(1/12) in frequency.
             engine.setPitchScale(pow(2.0, Double(pitchSemitones) / 12.0))
@@ -60,7 +66,7 @@ final class AudioPlayer: ObservableObject {
     }
     /// How the stereo output is remixed (stereo / left-only / right-only /
     /// remove-center), for isolating parts of a mix by stereo position.
-    @Published var channelMode: ChannelMode = .stereo {
+    var channelMode: ChannelMode = .stereo {
         didSet {
             engine.setChannelMode(channelMode)
             UserDefaults.standard.set(channelMode.rawValue, forKey: Self.channelModeKey)
@@ -68,10 +74,10 @@ final class AudioPlayer: ObservableObject {
     }
     /// Per-band EQ gains in dB (one per `RubberBandEngine.eqFrequencies` band).
     /// Set individual bands via `setEQGain(band:dB:)` so only that band updates.
-    @Published private(set) var eqGains: [Double]
+    private(set) var eqGains: [Double]
     /// When true the EQ is bypassed (audio passes through flat) but the band
     /// gains are preserved, so it can be toggled back on unchanged.
-    @Published var eqBypassed: Bool = false {
+    var eqBypassed: Bool = false {
         didSet {
             engine.setEQBypassed(eqBypassed)
             UserDefaults.standard.set(eqBypassed, forKey: Self.eqBypassedKey)
@@ -79,7 +85,7 @@ final class AudioPlayer: ObservableObject {
     }
     /// High-quality (R3 "finer") stretching when true; the lighter R2 "faster"
     /// engine when false (default, easier on the battery).
-    @Published var highQuality: Bool = false {
+    var highQuality: Bool = false {
         didSet {
             engine.setHighQuality(highQuality)
             UserDefaults.standard.set(highQuality, forKey: Self.highQualityKey)

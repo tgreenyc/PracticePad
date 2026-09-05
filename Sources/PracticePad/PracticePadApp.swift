@@ -2,7 +2,7 @@ import SwiftUI
 
 @main
 struct PracticePadApp: App {
-    @StateObject private var player = AudioPlayer()
+    @State private var player = AudioPlayer()
 
     /// Acknowledgements shown in the About panel. Rubber Band is GPL, so its
     /// license notice is included here as part of complying with it.
