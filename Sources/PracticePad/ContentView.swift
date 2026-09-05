@@ -410,13 +410,21 @@ struct ContentView: View {
                     action: player.jumpToLoopStart
                 )
 
-                Toggle("Loop", isOn: Binding(
-                    get: { player.loopEnabled },
-                    set: { player.setLoopEnabled($0) }
-                ))
-                .toggleStyle(.switch)
-                .tint(.yellow)
-                .disabled(!player.isLoopValid)
+                // Group the label + switch in their own center-aligned HStack
+                // so "Loop" stays vertically centered with the toggle, even
+                // though the outer row is top-aligned for the Set A/B buttons.
+                HStack(spacing: 6) {
+                    Text("Loop")
+                        .foregroundStyle(.secondary)
+                    Toggle("Loop", isOn: Binding(
+                        get: { player.loopEnabled },
+                        set: { player.setLoopEnabled($0) }
+                    ))
+                    .toggleStyle(.switch)
+                    .labelsHidden()
+                    .tint(.yellow)
+                    .disabled(!player.isLoopValid)
+                }
 
                 Spacer()
 
@@ -611,6 +619,7 @@ struct ContentView: View {
                 if !editing { player.persistRate() }
             }) {
                 Text("Playback speed")
+                    .padding(.trailing, 8)
             }
             .disabled(player.audioFileURL == nil)
 
@@ -643,6 +652,7 @@ struct ContentView: View {
                 set: { player.pitchSemitones = Int($0) }
             ), in: -12...12, step: 1) {
                 Text("Pitch shift")
+                    .padding(.trailing, 8)
             }
             .disabled(player.audioFileURL == nil)
         }
@@ -656,7 +666,6 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text("Equalizer")
-                        .font(.subheadline).bold()
                     Spacer()
                     Text("Bypass")
                         .font(.caption)
@@ -689,7 +698,6 @@ struct ContentView: View {
             // space below it via spacers above and below.
             VStack(alignment: .leading, spacing: 8) {
                 Text("Balance")
-                    .font(.subheadline).bold()
                 Spacer(minLength: 0)
                 Picker("Balance", selection: $player.channelMode) {
                     ForEach(ChannelMode.allCases) { mode in
