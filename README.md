@@ -4,7 +4,7 @@
 
 A macOS app for practicing music by ear. Load an audio or video file, slow it down without changing the pitch (or shift the pitch without changing the speed), and loop a tricky passage over and over until you've got it. Video files play their picture alongside the same practice controls.
 
-Built with SwiftUI and AVFoundation. Time-stretching and pitch-shifting are done by the [Rubber Band Library](https://breakfastquay.com/rubberband/): the decoded track is pulled through a `RubberBandStretcher` (real-time mode, R3 "finer" engine) inside an `AVAudioSourceNode`, then out through `AVAudioEngine`. A muted `AVPlayer`, slaved to the audio clock, provides the video picture.
+Built with SwiftUI and AVFoundation. Time-stretching and pitch-shifting are done by the [Rubber Band Library](https://breakfastquay.com/rubberband/): the decoded track is pulled through a `RubberBandStretcher` (real-time mode) inside an `AVAudioSourceNode`, then out through `AVAudioEngine`. It defaults to Rubber Band's lighter R2 "faster" engine to save battery, with a **High Quality** toggle to switch to the R3 "finer" engine. A muted `AVPlayer`, slaved to the audio clock, provides the video picture.
 
 > **Dependency & license note:** Rubber Band is required to *build* (install it with `brew install rubberband`; the build reads its headers and static library from the Homebrew prefix — `/opt/homebrew` on Apple Silicon, `/usr/local` on Intel). Rubber Band and its dependency libsamplerate are linked **statically** into the executable, so the built app does **not** require Homebrew to run — there are no dylibs to bundle. Rubber Band is distributed under the **GNU General Public License (GPL)**; linking it (statically or otherwise) means a distributed build of PracticePad is subject to the GPL unless you obtain a commercial Rubber Band license from Breakfast Quay.
 
@@ -18,6 +18,7 @@ Built with SwiftUI and AVFoundation. Time-stretching and pitch-shifting are done
 - **Video playback** — video files show the picture in a pane you can resize (drag the handle) or send to full screen; the picture stays in sync with the pitch- and speed-shifted audio.
 - **Speed control** — play from `0.25x` to `2.0x` without affecting pitch, with quick `0.5×` / `0.75×` / `1×` presets.
 - **Pitch control** — shift `-12` to `+12` semitones without affecting speed.
+- **Quality vs. battery** — uses Rubber Band's lighter R2 engine by default; flip **High Quality** on for the higher-fidelity R3 engine when you don't mind the extra CPU.
 - **Waveform view** — see the whole track; click to seek.
 - **A-B looping** — gapless looping of a selected region, ideal for drilling a passage.
 - **Saved loops** — save any number of named regions per track (Verse, Chorus, Solo…), recall them with one click, and see them as labeled bands on the waveform.
@@ -25,7 +26,7 @@ Built with SwiftUI and AVFoundation. Time-stretching and pitch-shifting are done
 - **Balance / channel isolation** — play the left or right channel through both speakers, or a "Karaoke" mode that cancels centered content (often the lead vocal). Works by stereo position, so results depend on how the track was mixed.
 - **Drag-and-drop** — drop a supported audio or video file onto the window to load it.
 - **Recent files** — reopen previously loaded tracks from the File menu.
-- **Remembers your setup** — speed, pitch, EQ, balance, saved loops, the last file and its loop, and the video pane size are restored on launch.
+- **Remembers your setup** — speed, pitch, EQ, balance, quality setting, saved loops, the last file and its loop, and the video pane size are restored on launch.
 
 ## Using the app
 
@@ -45,6 +46,7 @@ Built with SwiftUI and AVFoundation. Time-stretching and pitch-shifting are done
 - Drag the **Speed** slider (or tap a preset) to slow the track down — pitch stays the same.
 - Drag the **Pitch** slider to transpose in semitones — speed stays the same.
 - **Speed up / slow down** in `0.05×` steps with `⌘+` / `⌘-`.
+- Toggle **High Quality** (bottom-left of the Playback box) to trade battery for fidelity: off = the lighter R2 engine (default), on = the higher-quality R3 engine. When speed is `1.00x` and pitch is `0`, the stretcher is bypassed entirely regardless of this setting.
 - **Reset** (↺, or `⌘R`) restores speed to `1.00x`, pitch to `0`, balance to stereo, and the EQ to flat.
 
 ### Seek

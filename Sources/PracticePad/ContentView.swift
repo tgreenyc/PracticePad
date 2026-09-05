@@ -585,6 +585,15 @@ struct ContentView: View {
             }
 
             HStack {
+                Text("High Quality")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Toggle("High Quality", isOn: $player.highQuality)
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                    .labelsHidden()
+                    .help("Use the higher-quality R3 engine (more CPU/battery). Off uses the lighter R2 engine.")
+
                 Spacer()
                 Button {
                     player.resetPlayback()

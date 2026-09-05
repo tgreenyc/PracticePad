@@ -77,6 +77,14 @@ final class AudioPlayer: ObservableObject {
             UserDefaults.standard.set(eqBypassed, forKey: Self.eqBypassedKey)
         }
     }
+    /// High-quality (R3 "finer") stretching when true; the lighter R2 "faster"
+    /// engine when false (default, easier on the battery).
+    @Published var highQuality: Bool = false {
+        didSet {
+            engine.setHighQuality(highQuality)
+            UserDefaults.standard.set(highQuality, forKey: Self.highQualityKey)
+        }
+    }
 
     /// Center frequencies of the EQ bands, exposed for labeling in the UI.
     var eqFrequencies: [Float] { RubberBandEngine.eqFrequencies }
@@ -88,6 +96,7 @@ final class AudioPlayer: ObservableObject {
     private static let channelModeKey = "PracticePad.channelMode"
     private static let eqGainsKey = "PracticePad.eqGains"
     private static let eqBypassedKey = "PracticePad.eqBypassed"
+    private static let highQualityKey = "PracticePad.highQuality"
     private static let lastFileKey = "PracticePad.lastFilePath"
     private static let loopStartKey = "PracticePad.loopStart"
     private static let loopEndKey = "PracticePad.loopEnd"
@@ -141,6 +150,7 @@ final class AudioPlayer: ObservableObject {
             eqGains = Array(repeating: 0, count: bandCount)
         }
         eqBypassed = defaults.bool(forKey: Self.eqBypassedKey)
+        highQuality = defaults.bool(forKey: Self.highQualityKey)
 
         if defaults.object(forKey: Self.rateKey) != nil {
             rate = min(max(defaults.double(forKey: Self.rateKey), 0.25), 2.0)
@@ -153,6 +163,9 @@ final class AudioPlayer: ObservableObject {
         recentFiles = (defaults.array(forKey: Self.recentFilesKey) as? [String] ?? [])
             .map { URL(fileURLWithPath: $0) }
 
+        // Set quality before the first load so the stretcher is built with the
+        // right engine (assignments above don't fire didSet).
+        engine.setHighQuality(highQuality)
         engine.setTimeRatio(1.0 / rate)
         engine.setPitchScale(pow(2.0, Double(pitchSemitones) / 12.0))
         engine.setChannelMode(channelMode)

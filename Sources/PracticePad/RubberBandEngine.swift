@@ -61,6 +61,13 @@ final class RubberBandEngine {
 
     /// Rubber Band real-time stretcher (C API handle).
     private var stretcher: RubberBandState?
+    /// Which Rubber Band engine to use: R2 "faster" (default, lower CPU) or R3
+    /// "finer" (higher quality, more CPU). Changing it recreates the stretcher.
+    private var highQuality = false
+    /// Current time ratio and pitch scale, remembered so the stretcher can be
+    /// recreated (on a quality change) with the right initial values.
+    private var currentTimeRatio: Double = 1.0
+    private var currentPitchScale: Double = 1.0
 
     // MARK: - Playback state shared with the render callback
     //
@@ -181,8 +188,13 @@ final class RubberBandEngine {
 
     private func rebuildStretcher(initialTimeRatio: Double, initialPitchScale: Double) {
         if let s = stretcher { rubberband_delete(s); stretcher = nil }
+        currentTimeRatio = initialTimeRatio
+        currentPitchScale = initialPitchScale
+        let engineOption = highQuality
+            ? RubberBandOptionEngineFiner.rawValue
+            : RubberBandOptionEngineFaster.rawValue
         let options = RubberBandOptions(
-            RubberBandOptionProcessRealTime.rawValue | RubberBandOptionEngineFiner.rawValue
+            RubberBandOptionProcessRealTime.rawValue | engineOption
         )
         stretcher = rubberband_new(
             UInt32(sampleRate),
@@ -302,12 +314,30 @@ final class RubberBandEngine {
 
     func setTimeRatio(_ ratio: Double) {
         stateLock.lock(); defer { stateLock.unlock() }
+        currentTimeRatio = ratio
         if let s = stretcher { rubberband_set_time_ratio(s, ratio) }
     }
 
     func setPitchScale(_ scale: Double) {
         stateLock.lock(); defer { stateLock.unlock() }
+        currentPitchScale = scale
         if let s = stretcher { rubberband_set_pitch_scale(s, scale) }
+    }
+
+    /// Switch between the R2 "faster" and R3 "finer" engines. Recreates the
+    /// stretcher (the engine choice is fixed at construction) with the current
+    /// time ratio and pitch scale. Safe to call during playback — there may be
+    /// a brief blip as the stretcher is rebuilt.
+    func setHighQuality(_ enabled: Bool) {
+        stateLock.lock()
+        guard enabled != highQuality else { stateLock.unlock(); return }
+        highQuality = enabled
+        // Only rebuild if a stretcher already exists; before the first load
+        // there's nothing to rebuild and `load` will build it with this flag.
+        if stretcher != nil {
+            rebuildStretcher(initialTimeRatio: currentTimeRatio, initialPitchScale: currentPitchScale)
+        }
+        stateLock.unlock()
     }
 
     /// Enable/disable straight passthrough (skip Rubber Band). Call with `true`
