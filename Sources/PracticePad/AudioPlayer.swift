@@ -37,12 +37,6 @@ final class AudioPlayer {
     private(set) var waveform: [Float] = []
     /// Most-recently-opened files, newest first, for the Open Recent menu.
     private(set) var recentFiles: [URL] = []
-    /// True when the loaded file carries a video track worth showing.
-    private(set) var hasVideo = false
-    /// A muted `AVPlayer` for the picture only; audio always comes from the
-    /// Rubber Band engine. Slaved to the audio clock so pitch/speed/loop stay
-    /// authoritative.
-    private(set) var videoPlayer: AVPlayer?
 
     /// True only when both loop points are set and in the correct order.
     var isLoopValid: Bool {
@@ -59,9 +53,6 @@ final class AudioPlayer {
             // Rubber Band's time ratio is output/input duration: to play at
             // `rate`× speed the track must be *shortened*, i.e. ratio = 1/rate.
             engine.setTimeRatio(1.0 / rate)
-            // Match the picture's playback rate so it stays in step; pitch shift
-            // doesn't alter timing, so the video ignores it.
-            videoPlayer?.rate = isPlaying ? Float(rate) : 0
             updatePassthrough()
         }
     }
@@ -541,7 +532,6 @@ final class AudioPlayer {
 
             clearLoop()
             loadWaveform(url: url)
-            setupVideo(url: url)
             UserDefaults.standard.set(url.path, forKey: Self.lastFileKey)
             addRecentFile(url)
 
@@ -555,27 +545,6 @@ final class AudioPlayer {
         } catch {
             errorMessage = "Unable to load media file. \(error.localizedDescription)"
             removeRecentFile(url)
-        }
-    }
-
-    /// Tear down any existing video player, then asynchronously check whether
-    /// `url` has a video track and, if so, build a muted player for the picture.
-    private func setupVideo(url: URL) {
-        videoPlayer = nil
-        hasVideo = false
-        let asset = AVURLAsset(url: url)
-        asset.loadTracks(withMediaType: .video) { [weak self] tracks, _ in
-            let hasVideoTrack = (tracks?.isEmpty == false)
-            DispatchQueue.main.async {
-                guard let self, self.audioFileURL == url, hasVideoTrack else { return }
-                let player = AVPlayer(playerItem: AVPlayerItem(asset: asset))
-                player.isMuted = true
-                player.volume = 0
-                player.actionAtItemEnd = .pause
-                self.videoPlayer = player
-                self.hasVideo = true
-                self.resyncVideo(seek: true)
-            }
         }
     }
 
@@ -629,8 +598,6 @@ final class AudioPlayer {
         currentTime = 0
         totalFrames = 0
         waveform = []
-        videoPlayer = nil
-        hasVideo = false
         clearLoop()
         // Clear the in-memory list only (the persisted store is untouched, so
         // reopening the file restores its saved loops).
@@ -653,7 +620,6 @@ final class AudioPlayer {
         engine.start()
         isPlaying = true
         startDisplayTimer()
-        resyncVideo(seek: true)
     }
 
     func pause() {
@@ -661,7 +627,6 @@ final class AudioPlayer {
         engine.pause()
         isPlaying = false
         stopDisplayTimer()
-        videoPlayer?.pause()
     }
 
     func togglePlayPause() {
@@ -696,8 +661,6 @@ final class AudioPlayer {
         honorSeekPosition = false
         currentTime = 0
         stopDisplayTimer()
-        videoPlayer?.pause()
-        videoPlayer?.seek(to: .zero)
     }
 
     /// Seek to an absolute time in the track, resuming playback if it was
@@ -717,15 +680,13 @@ final class AudioPlayer {
         }
         syncEngineLoop()
         engine.seek(toFrame: frame(for: clamped), looping: shouldLoop)
-
-        resyncVideo(seek: true)
     }
 
     /// Default number of seconds the skip-back/forward controls move.
     static let skipInterval: TimeInterval = 1.0
 
     /// Seek by a relative offset in seconds (negative = back). Clamped to the
-    /// track bounds; reuses `seek(to:)` so loop/video behavior stays consistent.
+    /// track bounds; reuses `seek(to:)` so loop behavior stays consistent.
     func skip(by seconds: TimeInterval) {
         guard audioFile != nil else { return }
         seek(to: currentTime + seconds)
@@ -803,7 +764,6 @@ final class AudioPlayer {
             currentTime = start
             engine.seek(toFrame: frame(for: start), looping: true)
         }
-        resyncVideo(seek: true)
     }
 
     /// Push the current loop state into the engine and, if looping just became
@@ -818,7 +778,6 @@ final class AudioPlayer {
            currentTime < start || currentTime >= end {
             currentTime = start
             engine.seek(toFrame: frame(for: start), looping: true)
-            resyncVideo(seek: true)
         }
     }
 
@@ -878,7 +837,6 @@ final class AudioPlayer {
         honorSeekPosition = false
         currentTime = duration
         stopDisplayTimer()
-        videoPlayer?.pause()
     }
 
     private func startDisplayTimer() {
@@ -967,36 +925,5 @@ final class AudioPlayer {
         guard !isScrubbing, isPlaying else { return }
         let frame = engine.sourceFramePosition
         currentTime = min(Double(frame) / sampleRate, duration)
-        checkVideoDrift()
-    }
-
-    /// Make the video player match the audio's current position and play state.
-    /// Called on discrete transport changes (play/pause/seek/loop edits).
-    private func resyncVideo(seek: Bool) {
-        guard let vp = videoPlayer else { return }
-        if seek {
-            let target = CMTime(seconds: min(max(0, currentTime), duration), preferredTimescale: 600)
-            let tol = CMTime(seconds: 0.03, preferredTimescale: 600)
-            vp.seek(to: target, toleranceBefore: tol, toleranceAfter: tol)
-        }
-        if isPlaying {
-            vp.playImmediately(atRate: Float(rate))
-        } else {
-            vp.pause()
-        }
-    }
-
-    /// While playing, nudge the video back onto the audio clock if it has
-    /// drifted. Also catches the loop wrap (B→A), where the audio time jumps
-    /// back and the picture must follow.
-    private func checkVideoDrift() {
-        guard let vp = videoPlayer, isPlaying, vp.rate != 0 else { return }
-        let videoTime = vp.currentTime().seconds
-        guard videoTime.isFinite else { return }
-        if abs(videoTime - currentTime) > 0.08 {
-            let target = CMTime(seconds: min(max(0, currentTime), duration), preferredTimescale: 600)
-            let tol = CMTime(seconds: 0.03, preferredTimescale: 600)
-            vp.seek(to: target, toleranceBefore: tol, toleranceAfter: tol)
-        }
     }
 }

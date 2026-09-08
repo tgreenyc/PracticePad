@@ -16,8 +16,9 @@ struct FileImporter {
         }
     }
 
-    /// Audio and video containers we can open. `AVAudioFile` reads the audio
-    /// track out of video containers, so mp4/mov are valid here too.
+    /// Audio and video containers we can open. Only the audio is used —
+    /// PracticePad plays the sound, not the picture — but `AVAudioFile` reads
+    /// the audio track straight out of a video container, so mp4/mov are valid.
     static let supportedContentTypes: [UTType] = [
         .mp3, .mpeg4Audio, .wav, .aiff,
         .mpeg4Movie, .quickTimeMovie,

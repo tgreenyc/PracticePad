@@ -5,8 +5,6 @@ import UniformTypeIdentifiers
 struct ContentView: View {
     @Bindable var player: AudioPlayer
     @State private var isDropTargeted = false
-    @State private var isFullScreen = false
-    @State private var dragStartHeight: Double?
     /// Which saved loop is in edit mode (its name field is shown). Plain
     /// `@State` so it can be set before the field exists; focus is applied
     /// separately via `focusedLoopID`.
@@ -24,19 +22,9 @@ struct ContentView: View {
     /// Set momentarily while abandoning a new loop via Escape, so the
     /// focus-loss handler skips the usual commit for that id.
     @State private var abandoningLoopID: SavedLoop.ID?
-    @AppStorage("PracticePad.videoHeight") private var videoHeight: Double = 240
-
-    private static let minVideoHeight: Double = 120
-    private static let maxVideoHeight: Double = 900
 
     var body: some View {
-        Group {
-            if isFullScreen, player.hasVideo {
-                fullScreenVideo
-            } else {
-                mainLayout
-            }
-        }
+        mainLayout
         .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
             handleDrop(providers)
         }
@@ -69,11 +57,6 @@ struct ContentView: View {
             editingLoopID = id
             DispatchQueue.main.async { focusedLoopID = id }
         }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { _ in
-            // Keep our state in sync if the user leaves OS full screen via the
-            // green button or the standard shortcut rather than our controls.
-            isFullScreen = false
-        }
         .alert("Load Error", isPresented: Binding(
             get: { player.errorMessage != nil },
             set: { if !$0 { player.errorMessage = nil } }
@@ -104,10 +87,6 @@ struct ContentView: View {
                 transportBar
 
                 statusLine
-
-                if player.hasVideo {
-                    videoSection
-                }
 
                 GroupBox {
                     waveformSection
@@ -155,124 +134,9 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - Video
-
-    /// Resizable video pane: the picture with a full-screen button overlay and
-    /// a drag handle beneath it to adjust its height.
-    private var videoSection: some View {
-        VStack(spacing: 0) {
-            VideoPlayerView(player: player.videoPlayer)
-                .frame(height: videoHeight)
-                .frame(maxWidth: .infinity)
-                .background(Color.black)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .overlay(alignment: .topTrailing) {
-                    Button {
-                        enterFullScreen()
-                    } label: {
-                        Image(systemName: "arrow.up.left.and.arrow.down.right")
-                            .font(.title3)
-                            .padding(6)
-                            .background(.black.opacity(0.45), in: Circle())
-                            .foregroundStyle(.white)
-                    }
-                    .buttonStyle(.plain)
-                    .padding(8)
-                    .help("Full screen")
-                }
-
-            resizeHandle
-        }
-    }
-
-    private var resizeHandle: some View {
-        Capsule()
-            .fill(Color.secondary.opacity(0.5))
-            .frame(width: 44, height: 5)
-            .padding(.vertical, 5)
-            .frame(maxWidth: .infinity)
-            .contentShape(Rectangle())
-            .onHover { inside in
-                if inside { NSCursor.resizeUpDown.push() } else { NSCursor.pop() }
-            }
-            .gesture(
-                DragGesture()
-                    .onChanged { value in
-                        if dragStartHeight == nil { dragStartHeight = videoHeight }
-                        let base = dragStartHeight ?? videoHeight
-                        videoHeight = min(
-                            max(Self.minVideoHeight, base + Double(value.translation.height)),
-                            Self.maxVideoHeight
-                        )
-                    }
-                    .onEnded { _ in dragStartHeight = nil }
-            )
-            .help("Drag to resize the video")
-    }
-
-    private var fullScreenVideo: some View {
-        ZStack(alignment: .bottom) {
-            Color.black.ignoresSafeArea()
-
-            VideoPlayerView(player: player.videoPlayer)
-                .ignoresSafeArea()
-
-            fullScreenControls
-                .padding(.bottom, 24)
-        }
-        .onExitCommand { exitFullScreen() }
-    }
-
-    private var fullScreenControls: some View {
-        HStack(spacing: 20) {
-            Button {
-                player.stop()
-            } label: {
-                Image(systemName: "stop.fill").font(.title2)
-            }
-            .disabled(!player.isPlaying)
-
-            Button {
-                player.togglePlayPause()
-            } label: {
-                Image(systemName: player.isPlaying ? "pause.fill" : "play.fill").font(.title)
-            }
-
-            Text("\(Self.timeString(player.currentTime)) / \(Self.timeString(player.duration))")
-                .font(.callout)
-                .monospacedDigit()
-
-            Button {
-                exitFullScreen()
-            } label: {
-                Image(systemName: "arrow.down.right.and.arrow.up.left").font(.title2)
-            }
-            .help("Exit full screen (Esc)")
-        }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 14)
-        .background(.black.opacity(0.55), in: Capsule())
-        .foregroundStyle(.white)
-        .buttonStyle(.plain)
-    }
-
-    private func enterFullScreen() {
-        isFullScreen = true
-        if let window = NSApp.keyWindow, !window.styleMask.contains(.fullScreen) {
-            window.toggleFullScreen(nil)
-        }
-    }
-
-    private func exitFullScreen() {
-        isFullScreen = false
-        if let window = NSApp.keyWindow, window.styleMask.contains(.fullScreen) {
-            window.toggleFullScreen(nil)
-        }
-    }
-
-    /// Grow the window vertically so all content stays visible (e.g. when the
-    /// video pane is enlarged), capped to the screen. Grow-only, so it never
-    /// fights a manual resize; the ScrollView covers the capped case.
+    /// Grow the window vertically so all content stays visible, capped to the
+    /// screen. Grow-only, so it never fights a manual resize; the ScrollView
+    /// covers the capped case.
     private func growWindow(toFitContentHeight contentHeight: CGFloat) {
         guard contentHeight > 0,
               let window = NSApp.keyWindow ?? NSApp.windows.first(where: \.isVisible),

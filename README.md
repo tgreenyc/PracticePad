@@ -2,9 +2,9 @@
 
 # PracticePad
 
-A macOS app for practicing music by ear. Load an audio or video file, slow it down without changing the pitch (or shift the pitch without changing the speed), and loop a tricky passage over and over until you've got it. Video files play their picture alongside the same practice controls.
+A macOS app for practicing music by ear. Load an audio (or video) file, slow it down without changing the pitch (or shift the pitch without changing the speed), and loop a tricky passage over and over until you've got it. Video files are played for their audio track — PracticePad is an audio tool and doesn't show the picture.
 
-Built with SwiftUI and AVFoundation. Time-stretching and pitch-shifting are done by the [Rubber Band Library](https://breakfastquay.com/rubberband/): the decoded track is pulled through a `RubberBandStretcher` (real-time mode) inside an `AVAudioSourceNode`, then out through `AVAudioEngine`. It defaults to Rubber Band's lighter R2 "faster" engine to save battery, with a **High Quality** toggle to switch to the R3 "finer" engine. A muted `AVPlayer`, slaved to the audio clock, provides the video picture.
+Built with SwiftUI and AVFoundation. Time-stretching and pitch-shifting are done by the [Rubber Band Library](https://breakfastquay.com/rubberband/): the decoded track is pulled through a `RubberBandStretcher` (real-time mode) inside an `AVAudioSourceNode`, then out through `AVAudioEngine`. It defaults to Rubber Band's lighter R2 "faster" engine to save battery, with a **High Quality** toggle to switch to the R3 "finer" engine.
 
 > **Dependency & license note:** Rubber Band is required to *build* (install it with `brew install rubberband`; the build reads its headers and static library from the Homebrew prefix — `/opt/homebrew` on Apple Silicon, `/usr/local` on Intel). Rubber Band and its dependency libsamplerate are linked **statically** into the executable, so the built app does **not** require Homebrew to run — there are no dylibs to bundle. Rubber Band is distributed under the **GNU General Public License (GPL)**; linking it (statically or otherwise) means a distributed build of PracticePad is subject to the GPL unless you obtain a commercial Rubber Band license from Breakfast Quay.
 
@@ -14,8 +14,7 @@ Built with SwiftUI and AVFoundation. Time-stretching and pitch-shifting are done
 
 ## Features
 
-- **Audio & video** — open MP3, M4A, WAV, AIFF, MP4, M4V, or MOV. The audio track is played and processed even out of a video container.
-- **Video playback** — video files show the picture in a pane you can resize (drag the handle) or send to full screen; the picture stays in sync with the pitch- and speed-shifted audio.
+- **Audio (and video) files** — open MP3, M4A, WAV, AIFF, MP4, M4V, or MOV. Video containers are accepted too — their audio track is extracted and played (the picture isn't shown).
 - **Speed control** — play from `0.25×` to `2.0×` without affecting pitch, with quick `0.5×` / `0.75×` / `1×` presets.
 - **Pitch control** — shift `-12` to `+12` semitones without affecting speed.
 - **Quality vs. battery** — uses Rubber Band's lighter R2 engine by default; flip **High Quality** on for the higher-fidelity R3 engine when you don't mind the extra CPU.
@@ -26,7 +25,7 @@ Built with SwiftUI and AVFoundation. Time-stretching and pitch-shifting are done
 - **Balance / channel isolation** — play the left or right channel through both speakers, or a "Karaoke" mode that cancels centered content (often the lead vocal). Works by stereo position, so results depend on how the track was mixed.
 - **Drag-and-drop** — drop a supported audio or video file onto the window to load it.
 - **Recent files** — reopen previously loaded tracks from the File menu.
-- **Remembers your setup** — speed, pitch, EQ, balance, quality setting, saved loops, the last file and its loop, and the video pane size are restored on launch.
+- **Remembers your setup** — speed, pitch, EQ, balance, quality setting, saved loops, and the last file and its loop are restored on launch.
 
 ## Using the app
 
@@ -34,12 +33,6 @@ Built with SwiftUI and AVFoundation. Time-stretching and pitch-shifting are done
 - Click **Open** (⌘O), or drag a supported audio/video file onto the window.
 - Reopen something you had before via **File ▸ Open Recent** (with **Clear Menu** to reset the list).
 - **Close** unloads the current track and returns to the empty state.
-
-### Watch video
-- When the file has a video track, its picture appears in a pane above the waveform.
-- **Resize** the pane by dragging the handle beneath it; the window grows to keep the other controls visible.
-- Click the **full-screen button** (top-right of the picture) for a video-only view with minimal controls; press **Esc** (or the exit button) to return.
-- All audio processing — speed, pitch, and A-B looping — applies to video files too. The picture reseeks to A at each loop wrap, so audio stays gapless while the image resyncs.
 
 ### Play and adjust
 - **Play/Pause** with the button or the **spacebar**; **Stop** with the button or `⌘.`; jump to the top of the track and play with `Return`.
@@ -98,7 +91,6 @@ Behavior notes:
 | `⌘+` / `⌘-` | Speed up / slow down (0.05×) |
 | `⌘↑` / `⌘↓` | Pitch up / down (1 semitone) |
 | `⌘R` | Reset speed and pitch |
-| `Esc` | Exit full-screen video |
 
 > Menus and shortcuts are only available when running the built `.app` (see below) — not via `swift run`.
 
@@ -151,10 +143,9 @@ a commercial Rubber Band license).
 
 - `Package.swift` — Swift package manifest; links the Rubber Band static archives.
 - `Sources/PracticePad/PracticePadApp.swift` — app entry point, menu commands, and the About panel.
-- `Sources/PracticePad/ContentView.swift` — main UI: transport, waveform, loop/EQ/balance controls, drag-and-drop, resizable/full-screen video.
+- `Sources/PracticePad/ContentView.swift` — main UI: transport, waveform, loop/EQ/balance controls, and drag-and-drop.
 - `Sources/PracticePad/WaveformView.swift` — waveform rendering, seek, loop handles, and saved-loop bands.
-- `Sources/PracticePad/VideoPlayerView.swift` — `AVPlayerLayer`-backed view for the video picture.
-- `Sources/PracticePad/AudioPlayer.swift` — transport, seeking, A-B and saved loops, EQ/balance, video sync, persistence; drives the Rubber Band engine.
+- `Sources/PracticePad/AudioPlayer.swift` — transport, seeking, A-B and saved loops, EQ/balance, persistence; drives the Rubber Band engine.
 - `Sources/PracticePad/RubberBandEngine.swift` — `AVAudioSourceNode` pull loop feeding decoded audio through Rubber Band, plus the EQ node and channel-mode mixing.
 - `Sources/PracticePad/SavedLoop.swift` — the saved-loop model (name + start/end), persisted per file.
 - `Sources/PracticePad/FileImporter.swift` — open panel and supported audio/video types.

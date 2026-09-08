@@ -14,7 +14,7 @@ import Foundation
 ///
 /// The engine exposes an absolute *source* frame position (`sourceFramePosition`)
 /// that advances as Rubber Band consumes input. `AudioPlayer` maps that to the
-/// on-screen clock, so seek/loop/video-sync logic stays authoritative.
+/// on-screen clock, so seek/loop logic stays authoritative.
 
 /// How the stereo output is remixed before playback. Used to isolate parts of
 /// a mix by stereo position — helpful for practicing along to a recording.
