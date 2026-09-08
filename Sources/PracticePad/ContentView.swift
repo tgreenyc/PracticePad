@@ -86,16 +86,13 @@ struct ContentView: View {
         }
     }
 
-    /// Transparent layer behind the content that, only while a loop name is
-    /// being edited, commits and dismisses the edit on any click outside the
-    /// field. Inert otherwise so it never blocks normal interaction.
-    @ViewBuilder
-    private var editDismissLayer: some View {
-        if focusedLoopID != nil {
-            Color.clear
-                .contentShape(Rectangle())
-                .onTapGesture { focusedLoopID = nil }
-        }
+    /// Finalize a loop-name edit (from the ✓ button or Return): apply the
+    /// no-blank fallback, and collapse the field back to read-only.
+    private func commitLoopEdit(_ id: SavedLoop.ID) {
+        player.commitLoopName(id: id)
+        newlyCreatedLoopID = nil
+        editingLoopID = nil
+        focusedLoopID = nil
     }
 
     private var mainLayout: some View {
@@ -134,12 +131,6 @@ struct ContentView: View {
             .groupBoxStyle(LightGroupBoxStyle())
             .padding(20)
             .frame(maxWidth: .infinity, alignment: .leading)
-            // While a loop name is being edited, this sits IN FRONT of the
-            // content (overlay, not background) so a click anywhere outside the
-            // field is caught and commits the name by resigning focus. It only
-            // exists while editing, so it never blocks normal interaction. That
-            // first click is consumed to commit (Finder-style rename dismiss).
-            .overlay(editDismissLayer)
             .background(GeometryReader { geo in
                 Color.clear.preference(key: ContentHeightKey.self, value: geo.size.height)
             })
@@ -477,18 +468,31 @@ struct ContentView: View {
                     .help("Recall this loop (jump to its start and loop it)")
 
                     // Edit gate: the name is read-only until you click the
-                    // pencil, so it can't be changed by accident.
-                    Button {
-                        // Show the field first, then focus it on the next
-                        // runloop tick (you can't focus a view that isn't in
-                        // the hierarchy yet).
-                        editingLoopID = loop.id
-                        DispatchQueue.main.async { focusedLoopID = loop.id }
-                    } label: {
-                        Image(systemName: "pencil")
+                    // pencil. While editing, the pencil becomes a green ✓ that
+                    // commits — a visible, discoverable way to save with the
+                    // mouse (Return also commits).
+                    if editingLoopID == loop.id {
+                        Button {
+                            commitLoopEdit(loop.id)
+                        } label: {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                        }
+                        .buttonStyle(.borderless)
+                        .help("Save name (or press Return)")
+                    } else {
+                        Button {
+                            // Show the field first, then focus it on the next
+                            // runloop tick (you can't focus a view that isn't in
+                            // the hierarchy yet).
+                            editingLoopID = loop.id
+                            DispatchQueue.main.async { focusedLoopID = loop.id }
+                        } label: {
+                            Image(systemName: "pencil")
+                        }
+                        .buttonStyle(.borderless)
+                        .help("Rename this loop")
                     }
-                    .buttonStyle(.borderless)
-                    .help("Rename this loop")
 
                     if editingLoopID == loop.id {
                         // Editable name. Focusing it pauses plain-key shortcuts
@@ -502,10 +506,7 @@ struct ContentView: View {
                         .frame(maxWidth: 160, alignment: .leading)
                         .focused($focusedLoopID, equals: loop.id)
                         .onSubmit {
-                            player.commitLoopName(id: loop.id)
-                            newlyCreatedLoopID = nil
-                            editingLoopID = nil
-                            focusedLoopID = nil
+                            commitLoopEdit(loop.id)
                         }
                         .onExitCommand {
                             // Escape while naming. For a loop just created via
