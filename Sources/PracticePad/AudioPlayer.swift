@@ -399,6 +399,8 @@ final class AudioPlayer {
         let name = "Loop \(savedLoops.count + 1)"
         let loop = SavedLoop(name: name, start: start, end: end)
         savedLoops.append(loop)
+        // Keep the list in chronological order (by position in the track), so
+        // it reads left-to-right through the song regardless of creation order.
         savedLoops.sort { $0.start < $1.start }
         persistSavedLoops()
         lastSavedLoopID = loop.id
