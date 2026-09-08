@@ -338,9 +338,14 @@ struct ContentView: View {
     private var statusLine: some View {
         VStack(alignment: .leading, spacing: 4) {
             // "File: " label stays secondary; the filename itself is primary
-            // (white in dark mode) for contrast.
+            // (white in dark mode) for contrast. The audio format (when known)
+            // shares this line rather than taking its own row.
             Text("File: ").foregroundColor(.secondary)
                 + Text(player.loadedFileName).foregroundColor(.primary)
+                + Text(player.audioFormatDescription.isEmpty
+                    ? ""
+                    : "  •  \(player.audioFormatDescription)")
+                    .foregroundColor(.secondary)
             // "Status: " label and the trailing speed/pitch stay secondary;
             // the status value is green while playing, red while stopped.
             Text("Status: ").foregroundColor(.secondary)
@@ -348,11 +353,6 @@ struct ContentView: View {
                     .foregroundColor(player.isPlaying ? .green : .red)
                 + Text("  •  \(String(format: "%.2fx", player.rate)), \(player.pitchSemitones) semitones")
                     .foregroundColor(.secondary)
-
-            if !player.audioFormatDescription.isEmpty {
-                Text("Audio: ").foregroundColor(.secondary)
-                    + Text(player.audioFormatDescription).foregroundColor(.primary)
-            }
         }
         .font(.subheadline)
         .foregroundColor(.secondary)
