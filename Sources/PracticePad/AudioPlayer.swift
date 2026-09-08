@@ -849,8 +849,14 @@ final class AudioPlayer {
 
     /// Keep the in-point before the out-point so the loop is always valid.
     private func normalizeLoop() {
+        // Assign through locals rather than `swap(&loopStart, &loopEnd)`. These
+        // are @Observable tracked properties whose `didSet` calls persistLoop(),
+        // which reads loopStart — and `swap` holds exclusive `inout` access to
+        // both, so that re-entrant read trips Swift's exclusivity checker and
+        // aborts. Separate assignments avoid the overlapping access.
         if let start = loopStart, let end = loopEnd, start > end {
-            swap(&loopStart, &loopEnd)
+            loopStart = end
+            loopEnd = start
         }
     }
 
