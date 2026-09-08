@@ -40,6 +40,10 @@ struct WaveformView: View {
 
     @State private var dragStartX: CGFloat?
     @State private var dragCurrentX: CGFloat?
+    /// The saved-loop region whose label is currently hovered, for showing its
+    /// full name in a tooltip (SwiftUI `.help` proved unreliable on these
+    /// offset labels, so we drive a custom tooltip from hover state instead).
+    @State private var hoveredRegionID: WaveformRegion.ID?
 
     var body: some View {
         GeometryReader { geo in
@@ -51,12 +55,21 @@ struct WaveformView: View {
                     .contentShape(Rectangle())
                     .gesture(seekSelectGesture(width: width))
 
+                // Saved-loop name labels live ABOVE (outside) the gestured
+                // waveform layer so their `.help()` tooltips get a clean hover
+                // tracking area — inside the gesture layer the drag recognizer
+                // swallowed hover and the tooltip never fired.
+                savedRegionLabels(width: width, height: height)
+
                 if let start = loopStart {
                     handle(fraction: start, width: width, height: height, isStart: true, onDrag: onLoopStartDrag)
                 }
                 if let end = loopEnd {
                     handle(fraction: end, width: width, height: height, isStart: false, onDrag: onLoopEndDrag)
                 }
+
+                // Topmost so it draws over the A/B handle bars.
+                hoveredRegionTooltip(width: width)
             }
             .frame(width: width, height: height)
             .coordinateSpace(name: space)
@@ -93,9 +106,6 @@ struct WaveformView: View {
                 .fill(Color.primary)
                 .frame(width: 1.5, height: height)
                 .offset(x: CGFloat(progress) * width)
-
-            // Labels are drawn last so the waveform never covers them.
-            savedRegionLabels(width: width, height: height)
         }
     }
 
@@ -120,7 +130,8 @@ struct WaveformView: View {
                 .allowsHitTesting(false)
         }
 
-        // Name labels.
+        // Name labels. Each pill sits at the top-left of its region and tracks
+        // hover so we can show the full (untruncated) name in a tooltip below.
         ForEach(regions) { region in
             let x = CGFloat(min(max(0, region.start), 1)) * width
             let w = CGFloat(min(max(0, region.end - region.start), 1)) * width
@@ -134,11 +145,47 @@ struct WaveformView: View {
                     RoundedRectangle(cornerRadius: 3)
                         .fill(Color.white.opacity(0.9))
                 )
-                .frame(width: max(w, 1), height: height, alignment: .topLeading)
-                .padding(.top, 2)
+                .frame(width: max(w, 1), alignment: .leading)
                 .clipped()
+                // Size the pill to its own (small) height and pin it to the top,
+                // so the hover area matches the visible pill rather than the
+                // whole waveform height.
+                .frame(maxHeight: .infinity, alignment: .top)
+                .padding(.top, 2)
                 .offset(x: x)
+                .onContinuousHover { phase in
+                    switch phase {
+                    case .active:
+                        hoveredRegionID = region.id
+                    case .ended:
+                        if hoveredRegionID == region.id { hoveredRegionID = nil }
+                    }
+                }
+        }
+
+    }
+
+    /// Full-name tooltip for the hovered saved-loop label. Rendered as the
+    /// topmost sibling in the ZStack (above the loop handles) so it isn't
+    /// occluded by the A/B boundary bars.
+    @ViewBuilder
+    private func hoveredRegionTooltip(width: CGFloat) -> some View {
+        if let id = hoveredRegionID, let region = regions.first(where: { $0.id == id }) {
+            let x = CGFloat(min(max(0, region.start), 1)) * width
+            Text(region.name)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .fixedSize()
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Color.black.opacity(0.85))
+                )
+                .offset(x: min(x, width - 8), y: 22)
                 .allowsHitTesting(false)
+                .transition(.opacity)
         }
     }
 
