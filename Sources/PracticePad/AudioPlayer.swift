@@ -396,6 +396,19 @@ final class AudioPlayer {
     @discardableResult
     func saveCurrentLoop() -> SavedLoop.ID? {
         guard let start = loopStart, let end = loopEnd, end > start else { return nil }
+
+        // Don't create a duplicate: if a saved loop already covers the same
+        // region (within ~1ms, matching `activeSavedLoopIndex`), this is almost
+        // certainly an accidental re-save (e.g. ⌘S on a loop that's still
+        // loaded after seeking away from it). No-op — return the existing id
+        // without appending a copy or triggering the rename-focus flow.
+        let eps = 0.001
+        if let existing = savedLoops.first(where: {
+            abs($0.start - start) < eps && abs($0.end - end) < eps
+        }) {
+            return existing.id
+        }
+
         let name = "Loop \(savedLoops.count + 1)"
         let loop = SavedLoop(name: name, start: start, end: end)
         savedLoops.append(loop)
@@ -424,6 +437,20 @@ final class AudioPlayer {
         return savedLoops.firstIndex {
             abs($0.start - start) < eps && abs($0.end - end) < eps
         }
+    }
+
+    /// The id of the saved loop currently loaded as the active A–B region, if
+    /// any. Lets the UI highlight the active loop (its name in the list and its
+    /// label on the waveform).
+    ///
+    /// Cleared (nil) once the playhead moves outside the region — tracked by
+    /// `honorSeekPosition`, which the engine sets when you seek/play out of the
+    /// loop. In short: the highlight tracks `shouldLoop` — a loop is "active"
+    /// only when looping is on, the region is valid, and the playhead hasn't
+    /// been moved outside it. With the Loop toggle off, nothing is highlighted.
+    var activeSavedLoopID: SavedLoop.ID? {
+        guard shouldLoop else { return nil }
+        return activeSavedLoopIndex.map { savedLoops[$0].id }
     }
 
     /// Recall the next saved loop (wrapping past the end). If no saved loop is

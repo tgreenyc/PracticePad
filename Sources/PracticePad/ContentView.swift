@@ -17,6 +17,13 @@ struct ContentView: View {
     /// The name field that previously held focus, so we can finalize its name
     /// when focus moves away.
     @State private var previousEditingLoopID: SavedLoop.ID?
+    /// A loop that was just created via Save and is in its initial naming
+    /// session (as opposed to renaming an existing loop). Escape while naming
+    /// this one abandons the save — deletes the loop but keeps the A/B markers.
+    @State private var newlyCreatedLoopID: SavedLoop.ID?
+    /// Set momentarily while abandoning a new loop via Escape, so the
+    /// focus-loss handler skips the usual commit for that id.
+    @State private var abandoningLoopID: SavedLoop.ID?
     @AppStorage("PracticePad.videoHeight") private var videoHeight: Double = 240
 
     private static let minVideoHeight: Double = 120
@@ -40,8 +47,15 @@ struct ContentView: View {
             // When focus leaves a name field, finalize that loop's name (apply
             // the no-blank fallback) and collapse it back to read-only.
             if let previous = previousEditingLoopID, previous != newValue {
-                player.commitLoopName(id: previous)
-                if editingLoopID == previous { editingLoopID = nil }
+                // Skip the commit if this field is being abandoned via Escape
+                // (the loop is being deleted, so there's no name to finalize).
+                if previous == abandoningLoopID {
+                    abandoningLoopID = nil
+                } else {
+                    player.commitLoopName(id: previous)
+                    if editingLoopID == previous { editingLoopID = nil }
+                }
+                if newlyCreatedLoopID == previous { newlyCreatedLoopID = nil }
             }
             previousEditingLoopID = newValue
         }
@@ -51,6 +65,7 @@ struct ContentView: View {
             // next runloop tick (you can't focus a view that isn't in the
             // hierarchy yet), mirroring the pencil (rename) button's flow.
             guard let id = newValue else { return }
+            newlyCreatedLoopID = id
             editingLoopID = id
             DispatchQueue.main.async { focusedLoopID = id }
         }
@@ -119,7 +134,12 @@ struct ContentView: View {
             .groupBoxStyle(LightGroupBoxStyle())
             .padding(20)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(editDismissLayer)
+            // While a loop name is being edited, this sits IN FRONT of the
+            // content (overlay, not background) so a click anywhere outside the
+            // field is caught and commits the name by resigning focus. It only
+            // exists while editing, so it never blocks normal interaction. That
+            // first click is consumed to commit (Finder-style rename dismiss).
+            .overlay(editDismissLayer)
             .background(GeometryReader { geo in
                 Color.clear.preference(key: ContentHeightKey.self, value: geo.size.height)
             })
@@ -483,12 +503,31 @@ struct ContentView: View {
                         .focused($focusedLoopID, equals: loop.id)
                         .onSubmit {
                             player.commitLoopName(id: loop.id)
+                            newlyCreatedLoopID = nil
+                            editingLoopID = nil
+                            focusedLoopID = nil
+                        }
+                        .onExitCommand {
+                            // Escape while naming. For a loop just created via
+                            // Save, abandon it: delete the loop but keep the A/B
+                            // markers so Save can recreate it. For an existing
+                            // loop being renamed, just cancel the edit.
+                            if newlyCreatedLoopID == loop.id {
+                                abandoningLoopID = loop.id
+                                player.deleteLoop(id: loop.id)
+                                newlyCreatedLoopID = nil
+                            }
                             editingLoopID = nil
                             focusedLoopID = nil
                         }
                     } else {
+                        let isActive = (loop.id == player.activeSavedLoopID)
                         Text(loop.name)
                             .frame(maxWidth: 160, alignment: .leading)
+                            // Green and bold when this is the loop currently
+                            // loaded as the active A–B region.
+                            .foregroundStyle(isActive ? Color.green : Color.primary)
+                            .fontWeight(isActive ? .bold : .regular)
                     }
 
                     Spacer(minLength: 8)
@@ -830,6 +869,7 @@ private struct PlaybackPositionView: View {
                 loopStart: fraction(player.loopStart),
                 loopEnd: fraction(player.loopEnd),
                 regions: savedLoopRegions,
+                activeRegionID: player.activeSavedLoopID,
                 emptyMessage: player.audioFileURL == nil
                     ? "Drag an audio or video file here, or press ⌘O to open one"
                     : "Analyzing waveform…",

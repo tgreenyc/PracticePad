@@ -16,12 +16,12 @@ Built with SwiftUI and AVFoundation. Time-stretching and pitch-shifting are done
 
 - **Audio & video** — open MP3, M4A, WAV, AIFF, MP4, M4V, or MOV. The audio track is played and processed even out of a video container.
 - **Video playback** — video files show the picture in a pane you can resize (drag the handle) or send to full screen; the picture stays in sync with the pitch- and speed-shifted audio.
-- **Speed control** — play from `0.25x` to `2.0x` without affecting pitch, with quick `0.5×` / `0.75×` / `1×` presets.
+- **Speed control** — play from `0.25×` to `2.0×` without affecting pitch, with quick `0.5×` / `0.75×` / `1×` presets.
 - **Pitch control** — shift `-12` to `+12` semitones without affecting speed.
 - **Quality vs. battery** — uses Rubber Band's lighter R2 engine by default; flip **High Quality** on for the higher-fidelity R3 engine when you don't mind the extra CPU.
 - **Waveform view** — see the whole track; click to seek.
 - **A-B looping** — gapless looping of a selected region, ideal for drilling a passage.
-- **Saved loops** — save any number of named regions per track (Verse, Chorus, Solo…), recall them with one click, and see them as labeled bands on the waveform.
+- **Saved loops** — save any number of named regions per track (Verse, Chorus, Solo…), recall them with one click, and see them as labeled bands on the waveform. The loop that's currently looping is highlighted in green (in the list and on the waveform).
 - **Equalizer** — a 10-band graphic EQ to shape the tone (e.g. pull down the bass or lift a vocal's presence), with a Flat reset and a Bypass toggle for A/B comparison.
 - **Balance / channel isolation** — play the left or right channel through both speakers, or a "Karaoke" mode that cancels centered content (often the lead vocal). Works by stereo position, so results depend on how the track was mixed.
 - **Drag-and-drop** — drop a supported audio or video file onto the window to load it.
@@ -47,8 +47,8 @@ Built with SwiftUI and AVFoundation. Time-stretching and pitch-shifting are done
 - Drag the **Pitch** slider to transpose in semitones — speed stays the same.
 - **Speed up / slow down** in `0.05×` steps with `⌘+` / `⌘-`.
 - **Transpose up / down** a semitone at a time with `⌘↑` / `⌘↓`.
-- Toggle **High Quality** (bottom-left of the Playback box) to trade battery for fidelity: off = the lighter R2 engine (default), on = the higher-quality R3 engine. When speed is `1.00x` and pitch is `0`, the stretcher is bypassed entirely regardless of this setting.
-- **Reset** (↺, or `⌘R`) restores speed to `1.00x` and pitch to `0`. (Balance and the EQ have their own controls and are left unchanged.)
+- Toggle **High Quality** (bottom-left of the Playback box) to trade battery for fidelity: off = the lighter R2 engine (default), on = the higher-quality R3 engine. When speed is `1.00×` and pitch is `0`, the stretcher is bypassed entirely regardless of this setting.
+- **Reset** (↺, or `⌘R`) restores speed to `1.00×` and pitch to `0`. (Balance and the EQ have their own controls and are left unchanged.)
 
 ### Seek
 - **Click** anywhere on the waveform, or drag the position slider, to jump to that spot.
@@ -71,6 +71,7 @@ Behavior notes:
 ### Save and recall loops
 - With an A-B region set, click **Save** (or press `⌘S`) to store it as a named loop ("Loop 1", "Loop 2", …). Saving drops straight into renaming, so you can type a name and press Enter without touching the mouse. Saved loops are per-track and restored when you reopen the file.
 - Saved loops appear as labeled bands on the waveform (the active loop stays highlighted on top).
+- The **active loop** — the saved region currently looping — has its name shown in **green** (bold in the list, and on its waveform label). It's highlighted only while looping is on and the playhead is inside the region; turning Loop off, or seeking/playing outside the region, clears the highlight.
 - In the **Saved Loops** list, click the **↩** button to recall a loop (it loads into the A-B region and jumps to its start), the **pencil** to rename it, and the **trash** to delete it.
 - Renaming is gated behind the pencil so a name can't change by accident; press Enter or click elsewhere to save it.
 - Cycle between saved loops with the **‹ ›** buttons or the `[` / `]` keys — handy for moving between passages while playing. Navigation wraps around, and when no loop is active it picks the one nearest the playhead.
@@ -103,7 +104,7 @@ Behavior notes:
 
 ## Building from source
 
-Requires macOS 13+, a Swift toolchain (Xcode or the Swift command-line tools),
+Requires macOS 14+, a Swift toolchain (Xcode or the Swift command-line tools),
 and the Rubber Band library:
 
 ```bash

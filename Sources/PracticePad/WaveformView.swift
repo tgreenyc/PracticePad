@@ -20,6 +20,9 @@ struct WaveformView: View {
     let loopEnd: Double?
     /// Saved loops to show as faint labeled bands beneath the active highlight.
     var regions: [WaveformRegion] = []
+    /// The region currently loaded as the active A–B loop, if any — its label
+    /// is drawn in green to match the Saved Loops list.
+    var activeRegionID: UUID? = nil
     /// Shown when there are no samples yet (no file, or still analyzing).
     let emptyMessage: String
     /// Fired on a click (a drag that barely moved) with the target fraction.
@@ -137,7 +140,11 @@ struct WaveformView: View {
             let w = CGFloat(min(max(0, region.end - region.start), 1)) * width
             Text(region.name)
                 .font(.system(size: 11, weight: .heavy))
-                .foregroundStyle(Color(red: 0.55, green: 0.0, blue: 0.0))
+                // Green for the active loop, dark red otherwise — matches the
+                // green name in the Saved Loops list.
+                .foregroundStyle(region.id == activeRegionID
+                    ? Color(red: 0.0, green: 0.5, blue: 0.0)
+                    : Color(red: 0.55, green: 0.0, blue: 0.0))
                 .lineLimit(1)
                 .padding(.horizontal, 4)
                 .padding(.vertical, 1)
