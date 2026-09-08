@@ -6,6 +6,11 @@ import Observation
 final class AudioPlayer {
     private(set) var isPlaying = false
     private(set) var loadedFileName = "No file loaded"
+    /// A short description of the loaded audio's decoded format, e.g.
+    /// "44.1 kHz · Stereo". Empty when no file is loaded. Derived from the
+    /// decoded PCM format (available for every supported container), not the
+    /// source's encoded bitrate, which AVAudioFile doesn't expose.
+    private(set) var audioFormatDescription = ""
     var errorMessage: String?
     private(set) var duration: TimeInterval = 0
     // Updated ~10x/sec during playback. With @Observable, only views that
@@ -19,6 +24,10 @@ final class AudioPlayer {
     /// Named A–B regions saved for the currently loaded file, in time order.
     /// Recalling one loads its bounds into the active loop above.
     private(set) var savedLoops: [SavedLoop] = []
+    /// The id of the loop most recently created via `saveCurrentLoop()`. The
+    /// UI observes this so a fresh save (including from the `S` shortcut) can
+    /// immediately drop that loop's name field into edit mode.
+    private(set) var lastSavedLoopID: SavedLoop.ID?
     /// True while the user is editing a text field (e.g. renaming a loop).
     /// Playback menu shortcuts that use plain keys (Space, Delete, arrows) are
     /// disabled while this is set, so typing doesn't trigger them.
@@ -208,6 +217,35 @@ final class AudioPlayer {
         UserDefaults.standard.set(rate, forKey: Self.rateKey)
     }
 
+    /// A short, human-readable summary of an audio file's format, e.g.
+    /// "44.1 kHz · 16-bit · Stereo". Sample rate and channels come from the
+    /// decoded PCM format (defined for every supported container). Bit depth
+    /// comes from the *source* format, since the decoded format is typically
+    /// 32-bit float regardless of the file; it's omitted for compressed
+    /// sources (MP3/AAC), which report a bit depth of 0.
+    private static func formatDescription(decoded: AVAudioFormat, source: AVAudioFormat) -> String {
+        let khz = decoded.sampleRate / 1000
+        let khzText = khz == khz.rounded()
+            ? String(format: "%.0f kHz", khz)
+            : String(format: "%.1f kHz", khz)
+
+        let channels: String
+        switch decoded.channelCount {
+        case 1: channels = "Mono"
+        case 2: channels = "Stereo"
+        default: channels = "\(decoded.channelCount) ch"
+        }
+
+        var parts = [khzText]
+        let bitsPerChannel = source.streamDescription.pointee.mBitsPerChannel
+        if bitsPerChannel > 0 {
+            parts.append("\(bitsPerChannel)-bit")
+        }
+        parts.append(channels)
+
+        return parts.joined(separator: " · ")
+    }
+
     /// Tell the engine to skip Rubber Band entirely when there's nothing for it
     /// to do (speed 1.0× and pitch 0), which saves CPU/battery.
     private func updatePassthrough() {
@@ -228,6 +266,17 @@ final class AudioPlayer {
         let snapped = (stepped / Self.rateStep).rounded() * Self.rateStep
         rate = min(max(snapped, Self.rateRange.lowerBound), Self.rateRange.upperBound)
         persistRate()
+    }
+
+    /// Inclusive range of pitch shift in semitones (matches the Pitch slider).
+    static let pitchRange: ClosedRange<Int> = -12...12
+
+    /// Shift the pitch by a number of semitones (e.g. +/-1), clamped to
+    /// `pitchRange`. For the pitch hotkeys. Persistence happens in the
+    /// `pitchSemitones` didSet, so no separate save is needed here.
+    func adjustPitch(by semitones: Int) {
+        pitchSemitones = min(max(pitchSemitones + semitones, Self.pitchRange.lowerBound),
+                             Self.pitchRange.upperBound)
     }
 
     /// Push every stored EQ gain and the bypass state into the engine (after
@@ -341,13 +390,19 @@ final class AudioPlayer {
     }
 
     /// Save the current active A–B region as a new named loop (auto-named
-    /// "Loop N"). No-op if the current loop isn't valid.
-    func saveCurrentLoop() {
-        guard let start = loopStart, let end = loopEnd, end > start else { return }
+    /// "Loop N"). Returns the new loop's id (also published as
+    /// `lastSavedLoopID` so the UI can jump straight into renaming it), or nil
+    /// if the current loop isn't valid.
+    @discardableResult
+    func saveCurrentLoop() -> SavedLoop.ID? {
+        guard let start = loopStart, let end = loopEnd, end > start else { return nil }
         let name = "Loop \(savedLoops.count + 1)"
-        savedLoops.append(SavedLoop(name: name, start: start, end: end))
+        let loop = SavedLoop(name: name, start: start, end: end)
+        savedLoops.append(loop)
         savedLoops.sort { $0.start < $1.start }
         persistSavedLoops()
+        lastSavedLoopID = loop.id
+        return loop.id
     }
 
     /// Load a saved loop into the active A–B loop and jump to its start.
@@ -429,6 +484,10 @@ final class AudioPlayer {
             audioFile = file
             loadedFileName = url.lastPathComponent
             sampleRate = file.processingFormat.sampleRate
+            audioFormatDescription = Self.formatDescription(
+                decoded: file.processingFormat,
+                source: file.fileFormat
+            )
             totalFrames = file.length
             duration = sampleRate > 0 ? Double(totalFrames) / sampleRate : 0
             currentTime = 0
@@ -536,6 +595,7 @@ final class AudioPlayer {
         stop()
         audioFile = nil
         loadedFileName = "No file loaded"
+        audioFormatDescription = ""
         duration = 0
         currentTime = 0
         totalFrames = 0
@@ -581,6 +641,16 @@ final class AudioPlayer {
         } else {
             play()
         }
+    }
+
+    /// Jump to the very start of the track and play. `seek(to:)` already
+    /// resumes if playback was running (and, since 0 is outside any active
+    /// loop, plays straight from the top rather than snapping to A); if it was
+    /// paused, start playback here.
+    func playFromStart() {
+        guard audioFile != nil else { return }
+        seek(to: 0)
+        if !isPlaying { play() }
     }
 
     /// Restore the default speed and pitch. Scoped to the Playback controls;

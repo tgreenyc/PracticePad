@@ -45,6 +45,15 @@ struct ContentView: View {
             }
             previousEditingLoopID = newValue
         }
+        .onChange(of: player.lastSavedLoopID) { _, newValue in
+            // A loop was just saved (via the Save button or ⌘S) — drop straight
+            // into renaming it. Reveal the field first, then focus it on the
+            // next runloop tick (you can't focus a view that isn't in the
+            // hierarchy yet), mirroring the pencil (rename) button's flow.
+            guard let id = newValue else { return }
+            editingLoopID = id
+            DispatchQueue.main.async { focusedLoopID = id }
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { _ in
             // Keep our state in sync if the user leaves OS full screen via the
             // green button or the standard shortcut rather than our controls.
@@ -319,6 +328,11 @@ struct ContentView: View {
                     .foregroundColor(player.isPlaying ? .green : .red)
                 + Text("  •  \(String(format: "%.2fx", player.rate)), \(player.pitchSemitones) semitones")
                     .foregroundColor(.secondary)
+
+            if !player.audioFormatDescription.isEmpty {
+                Text("Audio: ").foregroundColor(.secondary)
+                    + Text(player.audioFormatDescription).foregroundColor(.primary)
+            }
         }
         .font(.subheadline)
         .foregroundColor(.secondary)
@@ -356,8 +370,8 @@ struct ContentView: View {
                     title: "Save",
                     systemImage: "plus.circle",
                     disabled: !player.isLoopValid,
-                    help: "Save the current A–B region as a named loop",
-                    action: player.saveCurrentLoop
+                    help: "Save the current A–B region as a named loop (⌘S)",
+                    action: { player.saveCurrentLoop() }
                 )
                 loopControlButton(
                     title: "Go to A",

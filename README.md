@@ -42,12 +42,13 @@ Built with SwiftUI and AVFoundation. Time-stretching and pitch-shifting are done
 - All audio processing — speed, pitch, and A-B looping — applies to video files too. The picture reseeks to A at each loop wrap, so audio stays gapless while the image resyncs.
 
 ### Play and adjust
-- **Play/Pause** with the button or the **spacebar**; **Stop** with the button or `⌘.`
+- **Play/Pause** with the button or the **spacebar**; **Stop** with the button or `⌘.`; jump to the top of the track and play with `Return`.
 - Drag the **Speed** slider (or tap a preset) to slow the track down — pitch stays the same.
 - Drag the **Pitch** slider to transpose in semitones — speed stays the same.
 - **Speed up / slow down** in `0.05×` steps with `⌘+` / `⌘-`.
+- **Transpose up / down** a semitone at a time with `⌘↑` / `⌘↓`.
 - Toggle **High Quality** (bottom-left of the Playback box) to trade battery for fidelity: off = the lighter R2 engine (default), on = the higher-quality R3 engine. When speed is `1.00x` and pitch is `0`, the stretcher is bypassed entirely regardless of this setting.
-- **Reset** (↺, or `⌘R`) restores speed to `1.00x`, pitch to `0`, balance to stereo, and the EQ to flat.
+- **Reset** (↺, or `⌘R`) restores speed to `1.00x` and pitch to `0`. (Balance and the EQ have their own controls and are left unchanged.)
 
 ### Seek
 - **Click** anywhere on the waveform, or drag the position slider, to jump to that spot.
@@ -55,11 +56,11 @@ Built with SwiftUI and AVFoundation. Time-stretching and pitch-shifting are done
 
 ### Loop a section (A-B)
 - **Drag across the waveform** to select a region — looping turns on automatically.
-- Or use **Set A** / **Set B** to mark the in/out points at the current position, then toggle **Loop**.
+- Or use **Set A** / **Set B** to mark the in/out points at the current position, then toggle **Loop**. From the keyboard: `A` sets the start, `B` sets the end, `L` toggles looping, and `X` clears the loop — all at the playhead, without reaching for the mouse.
 - Fine-tune the region by dragging the **A** and **B** handles:
   - Dragging **A** restarts the loop at the new start.
   - Dragging **B** keeps playing from the current spot out to the new end, then loops.
-- **Clear** removes the loop.
+- **Clear** (or `X`) removes the loop.
 
 Jump back to the loop start anytime with **Go to A** (or the `Delete` key, easy to reach one-handed while playing) — handy for restarting a passage you're drilling. With no loop set, it jumps to the start of the track.
 
@@ -68,7 +69,7 @@ Behavior notes:
 - **Stop → Play** always restarts the loop from **A**.
 
 ### Save and recall loops
-- With an A-B region set, click **Save** to store it as a named loop ("Loop 1", "Loop 2", …). Saved loops are per-track and restored when you reopen the file.
+- With an A-B region set, click **Save** (or press `⌘S`) to store it as a named loop ("Loop 1", "Loop 2", …). Saving drops straight into renaming, so you can type a name and press Enter without touching the mouse. Saved loops are per-track and restored when you reopen the file.
 - Saved loops appear as labeled bands on the waveform (the active loop stays highlighted on top).
 - In the **Saved Loops** list, click the **↩** button to recall a loop (it loads into the A-B region and jumps to its start), the **pencil** to rename it, and the **trash** to delete it.
 - Renaming is gated behind the pencil so a name can't change by accident; press Enter or click elsewhere to save it.
@@ -84,12 +85,18 @@ Behavior notes:
 | --- | --- |
 | `⌘O` | Open a file |
 | `Space` | Play / Pause |
+| `Return` | Play from the start of the track |
 | `⌘.` | Stop |
 | `←` / `→` | Skip back / forward 1 second |
 | `Delete` | Go to loop start (A) |
 | `[` / `]` | Previous / next saved loop |
+| `A` / `B` | Set loop start (A) / end (B) at playhead |
+| `⌘S` | Save the current A–B region as a named loop (and rename it) |
+| `L` | Toggle loop on/off |
+| `X` | Clear loop |
 | `⌘+` / `⌘-` | Speed up / slow down (0.05×) |
-| `⌘R` | Reset speed, pitch, balance, and EQ |
+| `⌘↑` / `⌘↓` | Pitch up / down (1 semitone) |
+| `⌘R` | Reset speed and pitch |
 | `Esc` | Exit full-screen video |
 
 > Menus and shortcuts are only available when running the built `.app` (see below) — not via `swift run`.
