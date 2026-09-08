@@ -863,25 +863,33 @@ private struct PlaybackPositionView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            WaveformView(
-                samples: player.waveform,
-                progress: player.duration > 0 ? player.currentTime / player.duration : 0,
-                loopStart: fraction(player.loopStart),
-                loopEnd: fraction(player.loopEnd),
-                regions: savedLoopRegions,
-                activeRegionID: player.activeSavedLoopID,
-                emptyMessage: player.audioFileURL == nil
-                    ? "Drag an audio or video file here, or press ⌘O to open one"
-                    : "Analyzing waveform…",
-                onSeek: { player.seek(to: $0 * player.duration) },
-                onLoopSelect: { start, end in
-                    player.setLoopRegion(start: start * player.duration, end: end * player.duration)
-                },
-                onLoopStartDrag: { player.updateLoopStart($0 * player.duration) },
-                onLoopEndDrag: { player.updateLoopEnd($0 * player.duration) },
-                onLoopEditEnd: { isStart in player.commitLoopEdit(resetToStart: isStart) }
-            )
-            .frame(height: 96)
+            // Time ruler + waveform share one 96pt slot (18pt ruler + 78pt
+            // waveform) so the GroupBox height is unchanged. The ruler uses the
+            // same width mapping, so its ticks line up with the audio.
+            VStack(spacing: 0) {
+                TimeRulerView(duration: player.duration)
+                    .frame(height: 18)
+
+                WaveformView(
+                    samples: player.waveform,
+                    progress: player.duration > 0 ? player.currentTime / player.duration : 0,
+                    loopStart: fraction(player.loopStart),
+                    loopEnd: fraction(player.loopEnd),
+                    regions: savedLoopRegions,
+                    activeRegionID: player.activeSavedLoopID,
+                    emptyMessage: player.audioFileURL == nil
+                        ? "Drag an audio or video file here, or press ⌘O to open one"
+                        : "Analyzing waveform…",
+                    onSeek: { player.seek(to: $0 * player.duration) },
+                    onLoopSelect: { start, end in
+                        player.setLoopRegion(start: start * player.duration, end: end * player.duration)
+                    },
+                    onLoopStartDrag: { player.updateLoopStart($0 * player.duration) },
+                    onLoopEndDrag: { player.updateLoopEnd($0 * player.duration) },
+                    onLoopEditEnd: { isStart in player.commitLoopEdit(resetToStart: isStart) }
+                )
+                .frame(height: 78)
+            }
             .disabled(player.audioFileURL == nil)
 
             Slider(

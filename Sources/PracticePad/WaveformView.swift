@@ -13,6 +13,64 @@ struct WaveformRegion: Identifiable {
     let end: Double
 }
 
+/// A thin time ruler drawn directly above the waveform, sharing its width so
+/// ticks line up with the audio. Picks a "nice" interval (1/2/5/10/15/30/60s…)
+/// so labels stay readable regardless of track length or window width.
+struct TimeRulerView: View {
+    /// Total track length in seconds. No ruler is drawn when this is 0.
+    let duration: TimeInterval
+
+    /// "Nice" step values (seconds) to choose from, smallest to largest.
+    private static let niceSteps: [TimeInterval] = [
+        1, 2, 5, 10, 15, 30, 60, 120, 300, 600,
+    ]
+    /// Aim for roughly this much horizontal space between labels.
+    private static let targetLabelSpacing: CGFloat = 72
+
+    var body: some View {
+        GeometryReader { geo in
+            let width = geo.size.width
+            let height = geo.size.height
+            Canvas { context, size in
+                guard duration > 0, width > 0 else { return }
+
+                // Choose the smallest "nice" step whose on-screen spacing meets
+                // the target, so labels never crowd.
+                let secondsPerPoint = duration / Double(width)
+                let minStep = Double(Self.targetLabelSpacing) * secondsPerPoint
+                let step = Self.niceSteps.first { $0 >= minStep } ?? Self.niceSteps.last!
+
+                var t = step
+                while t < duration {
+                    let x = CGFloat(t / duration) * size.width
+                    // Tick mark: a short vertical line rising from the baseline
+                    // (the bottom edge, which abuts the waveform).
+                    var tick = Path()
+                    tick.move(to: CGPoint(x: x, y: height))
+                    tick.addLine(to: CGPoint(x: x, y: height - 4))
+                    context.stroke(tick, with: .color(.secondary.opacity(0.5)), lineWidth: 1)
+
+                    // Label above the tick. Anchored at its top so it always
+                    // sits fully inside the strip (no clipping at the top edge).
+                    let text = Text(Self.label(for: t))
+                        .font(.system(size: 9))
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                    context.draw(text, at: CGPoint(x: x, y: 1), anchor: .top)
+
+                    t += step
+                }
+            }
+        }
+    }
+
+    /// Format a tick time as m:ss (matching the rest of the UI).
+    private static func label(for time: TimeInterval) -> String {
+        let total = Int(time.rounded())
+        return String(format: "%d:%02d", total / 60, total % 60)
+    }
+}
+
 struct WaveformView: View {
     let samples: [Float]
     let progress: Double
