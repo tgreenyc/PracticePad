@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Draws the track waveform and lets the user click to seek, drag across a
@@ -303,7 +304,10 @@ struct WaveformView: View {
                 .onChanged { value in
                     onDrag(Double(clamp(value.location.x, width) / width))
                 }
-                .onEnded { _ in onLoopEditEnd(isStart) }
+                .onEnded { _ in
+                    onLoopEditEnd(isStart)
+                    resignWaveformFocus()
+                }
         )
     }
 
@@ -330,7 +334,17 @@ struct WaveformView: View {
                 }
                 dragStartX = nil
                 dragCurrentX = nil
+                // Return first responder to the window so plain-key menu
+                // shortcuts (Space, A/B, L, X…) route again — a waveform drag
+                // otherwise leaves focus on the gesture view and swallows them.
+                resignWaveformFocus()
             }
+    }
+
+    /// Hand first responder back to the key window so unmodified menu key
+    /// equivalents keep working after interacting with the waveform.
+    private func resignWaveformFocus() {
+        NSApp.keyWindow?.makeFirstResponder(nil)
     }
 
     // MARK: - Drawing
