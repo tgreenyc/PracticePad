@@ -827,16 +827,21 @@ final class AudioPlayer {
         isScrubbing = true
     }
 
-    /// Mark the loop in-point (A) at the current position.
+    /// Mark the loop in-point (A) at the current position. Laying down a fresh
+    /// point means building a new region, so drop any recalled-loop link — a
+    /// later Save creates a new loop rather than editing the recalled one.
     func markLoopStart() {
         loopStart = currentTime
+        recalledLoopID = nil
         normalizeLoop()
         applyLoopChange()
     }
 
-    /// Mark the loop out-point (B) at the current position.
+    /// Mark the loop out-point (B) at the current position. Also drops the
+    /// recalled-loop link (see `markLoopStart`).
     func markLoopEnd() {
         loopEnd = currentTime
+        recalledLoopID = nil
         normalizeLoop()
         applyLoopChange()
     }
