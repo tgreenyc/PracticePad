@@ -12,40 +12,30 @@ struct ContentView: View {
     /// Focus binding for the visible name field. Kept separate from
     /// `editingLoopID` so we can render the field first, then focus it.
     @FocusState private var focusedLoopID: SavedLoop.ID?
-    /// The name field that previously held focus, so we can finalize its name
-    /// when focus moves away.
-    @State private var previousEditingLoopID: SavedLoop.ID?
     /// A loop that was just created via Save and is in its initial naming
     /// session (as opposed to renaming an existing loop). Escape while naming
     /// this one abandons the save — deletes the loop but keeps the A/B markers.
     @State private var newlyCreatedLoopID: SavedLoop.ID?
-    /// Set momentarily while abandoning a new loop via Escape, so the
-    /// focus-loss handler skips the usual commit for that id.
-    @State private var abandoningLoopID: SavedLoop.ID?
+    /// Staged text for the editable start/end timestamp fields, seeded when a
+    /// loop enters edit mode and written back (if valid) on commit. Kept
+    /// separate from the model so half-typed/invalid values don't corrupt it.
+    @State private var editStartText = ""
+    @State private var editEndText = ""
 
     var body: some View {
         mainLayout
         .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
             handleDrop(providers)
         }
-        .onChange(of: focusedLoopID) { _, newValue in
-            // Mirror text-field focus into the player so the App's plain-key
-            // Playback shortcuts pause while a loop name is being edited.
+        // Edit mode ends only on an explicit commit (✓/Return) or cancel
+        // (Escape) — NOT on focus loss. The edit row has several fields (name,
+        // start, end); moving between them drops focus on the previous one, and
+        // treating that as "done" would exit edit mode the moment you click the
+        // timestamp fields. So `isEditingText` (which gates plain-key playback
+        // shortcuts) is driven by whether a row is in edit mode, not by which
+        // sub-field currently holds focus.
+        .onChange(of: editingLoopID) { _, newValue in
             player.isEditingText = (newValue != nil)
-            // When focus leaves a name field, finalize that loop's name (apply
-            // the no-blank fallback) and collapse it back to read-only.
-            if let previous = previousEditingLoopID, previous != newValue {
-                // Skip the commit if this field is being abandoned via Escape
-                // (the loop is being deleted, so there's no name to finalize).
-                if previous == abandoningLoopID {
-                    abandoningLoopID = nil
-                } else {
-                    player.commitLoopName(id: previous)
-                    if editingLoopID == previous { editingLoopID = nil }
-                }
-                if newlyCreatedLoopID == previous { newlyCreatedLoopID = nil }
-            }
-            previousEditingLoopID = newValue
         }
         .onChange(of: player.lastSavedLoopID) { _, newValue in
             // A loop was just saved (via the Save button or ⌘S) — drop straight
@@ -54,6 +44,12 @@ struct ContentView: View {
             // hierarchy yet), mirroring the pencil (rename) button's flow.
             guard let id = newValue else { return }
             newlyCreatedLoopID = id
+            // Seed the editable timestamp fields from the new loop's bounds so
+            // they're populated if the user tabs to them.
+            if let loop = player.savedLoops.first(where: { $0.id == id }) {
+                editStartText = ContentView.timeString(loop.start)
+                editEndText = ContentView.timeString(loop.end)
+            }
             editingLoopID = id
             DispatchQueue.main.async { focusedLoopID = id }
         }
@@ -71,11 +67,39 @@ struct ContentView: View {
 
     /// Finalize a loop-name edit (from the ✓ button or Return): apply the
     /// no-blank fallback, and collapse the field back to read-only.
+    /// Cancel an in-progress loop edit (Escape). For a loop just created via
+    /// Save, this abandons it — deletes the loop but keeps the A/B markers so
+    /// Save can recreate it. For an existing loop, it just exits edit mode
+    /// (discarding any unsaved name/timestamp changes).
+    private func cancelLoopEdit(_ id: SavedLoop.ID) {
+        if newlyCreatedLoopID == id {
+            player.deleteLoop(id: id)
+            newlyCreatedLoopID = nil
+        }
+        editingLoopID = nil
+        focusedLoopID = nil
+    }
+
     private func commitLoopEdit(_ id: SavedLoop.ID) {
         player.commitLoopName(id: id)
+        // Apply edited timestamps if both parse and form a valid region;
+        // otherwise leave the loop's times unchanged (silent revert).
+        if let start = AudioPlayer.parseTime(editStartText),
+           let end = AudioPlayer.parseTime(editEndText) {
+            player.updateLoopTimes(id: id, start: start, end: end)
+        }
         newlyCreatedLoopID = nil
         editingLoopID = nil
         focusedLoopID = nil
+    }
+
+    /// Seed the staged timestamp fields from a loop's current bounds when it
+    /// enters edit mode.
+    private func beginEditing(_ loop: SavedLoop) {
+        editStartText = ContentView.timeString(loop.start)
+        editEndText = ContentView.timeString(loop.end)
+        editingLoopID = loop.id
+        DispatchQueue.main.async { focusedLoopID = loop.id }
     }
 
     private var mainLayout: some View {
@@ -343,19 +367,15 @@ struct ContentView: View {
                                 .foregroundStyle(.green)
                         }
                         .buttonStyle(.borderless)
-                        .help("Save name (or press Return)")
+                        .help("Save changes (or press Return)")
                     } else {
                         Button {
-                            // Show the field first, then focus it on the next
-                            // runloop tick (you can't focus a view that isn't in
-                            // the hierarchy yet).
-                            editingLoopID = loop.id
-                            DispatchQueue.main.async { focusedLoopID = loop.id }
+                            beginEditing(loop)
                         } label: {
                             Image(systemName: "pencil")
                         }
                         .buttonStyle(.borderless)
-                        .help("Rename this loop")
+                        .help("Edit this loop's name and times")
                     }
 
                     if editingLoopID == loop.id {
@@ -372,19 +392,7 @@ struct ContentView: View {
                         .onSubmit {
                             commitLoopEdit(loop.id)
                         }
-                        .onExitCommand {
-                            // Escape while naming. For a loop just created via
-                            // Save, abandon it: delete the loop but keep the A/B
-                            // markers so Save can recreate it. For an existing
-                            // loop being renamed, just cancel the edit.
-                            if newlyCreatedLoopID == loop.id {
-                                abandoningLoopID = loop.id
-                                player.deleteLoop(id: loop.id)
-                                newlyCreatedLoopID = nil
-                            }
-                            editingLoopID = nil
-                            focusedLoopID = nil
-                        }
+                        .onExitCommand { cancelLoopEdit(loop.id) }
                     } else {
                         let isActive = (loop.id == player.activeSavedLoopID)
                         Text(loop.name)
@@ -397,10 +405,28 @@ struct ContentView: View {
 
                     Spacer(minLength: 8)
 
-                    Text("\(Self.timeString(loop.start)) – \(Self.timeString(loop.end))")
+                    if editingLoopID == loop.id {
+                        // Editable start/end timestamps (m:ss). Committed on
+                        // Return/✓ via commitLoopEdit, which parses and validates
+                        // them and reverts silently if invalid.
+                        HStack(spacing: 4) {
+                            TextField("start", text: $editStartText)
+                                .frame(width: 52)
+                            Text("–").foregroundStyle(.secondary)
+                            TextField("end", text: $editEndText)
+                                .frame(width: 52)
+                        }
+                        .textFieldStyle(.roundedBorder)
                         .font(.caption)
                         .monospacedDigit()
-                        .foregroundStyle(.secondary)
+                        .onSubmit { commitLoopEdit(loop.id) }
+                        .onExitCommand { cancelLoopEdit(loop.id) }
+                    } else {
+                        Text("\(Self.timeString(loop.start)) – \(Self.timeString(loop.end))")
+                            .font(.caption)
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                    }
 
                     Button {
                         player.deleteLoop(id: loop.id)
