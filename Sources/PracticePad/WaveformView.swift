@@ -191,8 +191,11 @@ struct WaveformView: View {
                 .allowsHitTesting(false)
         }
 
-        // Name labels. Each pill sits at the top-left of its region and tracks
-        // hover so we can show the full (untruncated) name in a tooltip below.
+        // Name labels. Each pill is positioned with real layout (leading
+        // padding), NOT `.offset` — `.offset` moves a view visually but leaves
+        // its hit-test frame at the original spot, which made hover regions
+        // overlap at the left edge and report the wrong loop. Using layout
+        // padding keeps each label's hover area aligned with its drawn pill.
         ForEach(regions) { region in
             let x = CGFloat(min(max(0, region.start), 1)) * width
             let w = CGFloat(min(max(0, region.end - region.start), 1)) * width
@@ -212,12 +215,7 @@ struct WaveformView: View {
                 )
                 .frame(width: max(w, 1), alignment: .leading)
                 .clipped()
-                // Size the pill to its own (small) height and pin it to the top,
-                // so the hover area matches the visible pill rather than the
-                // whole waveform height.
-                .frame(maxHeight: .infinity, alignment: .top)
-                .padding(.top, 2)
-                .offset(x: x)
+                .contentShape(Rectangle())
                 .onContinuousHover { phase in
                     switch phase {
                     case .active:
@@ -226,8 +224,13 @@ struct WaveformView: View {
                         if hoveredRegionID == region.id { hoveredRegionID = nil }
                     }
                 }
+                // Position via layout: leading pad to the region start, pinned
+                // to the top of the waveform. Full-width container so the pill
+                // lands at the right x and its hit area matches.
+                .padding(.leading, x)
+                .padding(.top, 2)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-
     }
 
     /// Full-name tooltip for the hovered saved-loop label. Rendered as the
