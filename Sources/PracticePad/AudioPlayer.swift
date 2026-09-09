@@ -794,8 +794,16 @@ final class AudioPlayer {
     func markLoopStart() {
         loopStart = currentTime
         recalledLoopID = nil
-        normalizeLoop()
-        applyLoopChange()
+        // If the existing end is now at/before the new start, it's stale from a
+        // previous loop — discard it (the user is starting a fresh region and
+        // will mark a new end next), rather than swapping it into the start
+        // slot. Don't snap the playhead: it stays where the user placed A.
+        if let end = loopEnd, end <= currentTime {
+            loopEnd = nil
+        }
+        loopEnabled = isLoopValid
+        honorSeekPosition = true
+        syncEngineLoop()
     }
 
     /// Mark the loop out-point (B) at the current position. Also drops the
@@ -803,8 +811,14 @@ final class AudioPlayer {
     func markLoopEnd() {
         loopEnd = currentTime
         recalledLoopID = nil
-        normalizeLoop()
-        applyLoopChange()
+        // If the existing start is now at/after the new end, it's stale —
+        // discard it (the user will mark a new start) rather than swapping.
+        if let start = loopStart, start >= currentTime {
+            loopStart = nil
+        }
+        loopEnabled = isLoopValid
+        honorSeekPosition = true
+        syncEngineLoop()
     }
 
     func clearLoop() {
