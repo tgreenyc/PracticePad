@@ -73,7 +73,10 @@ Behavior notes:
 - Saved loops appear as labeled bands on the waveform (the active loop stays highlighted on top).
 - The **active loop** — the saved region currently looping — has its name shown in **green** (bold in the list, and on its waveform label). It's highlighted only while looping is on and the playhead is inside the region; turning Loop off, or seeking/playing outside the region, clears the highlight.
 - In the **Saved Loops** list, click the **↩** button to recall a loop (it loads into the A-B region and jumps to its start), the **pencil** to rename it, and the **trash** to delete it.
-- Renaming is gated behind the pencil so a name can't change by accident; press Enter or click elsewhere to save it.
+- **Adjust an existing loop's bounds** two ways:
+  - *On the waveform:* recall the loop, move the **A**/**B** points (drag the handles, or press `A`/`B` to set them at the playhead), then press `⌘S` — this updates the recalled loop in place (keeping its name) rather than creating a new one.
+  - *By typing:* click the **pencil** to edit the loop, then type new **start**/**end** times (`m:ss`, or seconds) in the fields next to the name. Invalid entries (e.g. end before start) are ignored. If the edited loop is the one currently on the waveform, its yellow A/B bars move to match.
+- Editing (pencil) exposes the loop's **name and start/end times** together; press Enter or click the green ✓ to save, or Esc to cancel.
 - Cycle between saved loops with the **‹ ›** buttons or the `[` / `]` keys — handy for moving between passages while playing. Navigation wraps around, and when no loop is active it picks the one nearest the playhead.
 
 ### Shape the sound (Mix)
@@ -92,7 +95,7 @@ Behavior notes:
 | `Delete` | Go to loop start (A) |
 | `[` / `]` | Previous / next saved loop |
 | `A` / `B` | Set loop start (A) / end (B) at playhead |
-| `⌘S` | Save the current A–B region as a named loop (and rename it) |
+| `⌘S` | Save the A–B region as a named loop (and rename it), or update a recalled loop's bounds in place |
 | `L` | Toggle loop on/off |
 | `X` | Clear loop |
 | `⌘+` / `⌘-` | Speed up / slow down (0.05×) |

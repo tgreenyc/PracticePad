@@ -28,6 +28,12 @@ final class AudioPlayer {
     /// UI observes this so a fresh save (including from the `S` shortcut) can
     /// immediately drop that loop's name field into edit mode.
     private(set) var lastSavedLoopID: SavedLoop.ID?
+    /// The saved loop currently loaded as the active region (set by
+    /// `recallLoop`). It persists even after the A/B bounds are nudged, so a
+    /// subsequent Save updates *this* loop in place rather than creating a
+    /// copy. Cleared when the region is cleared or replaced by a fresh
+    /// selection.
+    private var recalledLoopID: SavedLoop.ID?
     /// True while the user is editing a text field (e.g. renaming a loop).
     /// Playback menu shortcuts that use plain keys (Space, Delete, arrows) are
     /// disabled while this is set, so typing doesn't trigger them.
@@ -409,6 +415,18 @@ final class AudioPlayer {
             return existing.id
         }
 
+        // If a saved loop was recalled and its bounds have since been adjusted
+        // (by handle drag or the A/B keys), Save updates that loop in place —
+        // keeping its name and id — rather than creating a copy.
+        if let id = recalledLoopID,
+           let i = savedLoops.firstIndex(where: { $0.id == id }) {
+            savedLoops[i].start = start
+            savedLoops[i].end = end
+            savedLoops.sort { $0.start < $1.start }
+            persistSavedLoops()
+            return id
+        }
+
         let name = "Loop \(savedLoops.count + 1)"
         let loop = SavedLoop(name: name, start: start, end: end)
         savedLoops.append(loop)
@@ -423,6 +441,9 @@ final class AudioPlayer {
     /// Load a saved loop into the active A–B loop and jump to its start.
     func recallLoop(_ loop: SavedLoop) {
         setLoopRegion(start: loop.start, end: loop.end)
+        // Remember which loop this is so a later Save (after adjusting the
+        // bounds) updates it in place. Set after setLoopRegion, which clears it.
+        recalledLoopID = loop.id
         jumpToLoopStart()
     }
 
@@ -502,8 +523,64 @@ final class AudioPlayer {
 
     /// Delete a saved loop.
     func deleteLoop(id: SavedLoop.ID) {
+        if recalledLoopID == id { recalledLoopID = nil }
         savedLoops.removeAll { $0.id == id }
         persistSavedLoops()
+    }
+
+    /// Update a saved loop's start/end times (from the editable timestamp
+    /// fields). Both are clamped into the track and must form a valid region
+    /// (end > start); returns false and changes nothing if the region is
+    /// invalid, so the UI can revert. If this loop is the active/recalled one,
+    /// the live A–B region is updated to match.
+    @discardableResult
+    func updateLoopTimes(id: SavedLoop.ID, start: TimeInterval, end: TimeInterval) -> Bool {
+        guard let i = savedLoops.firstIndex(where: { $0.id == id }) else { return false }
+        let clampedStart = min(max(0, start), duration)
+        let clampedEnd = min(max(0, end), duration)
+        guard clampedEnd > clampedStart else { return false }
+
+        // Is this loop the one currently shown on the waveform (its yellow A/B
+        // bars)? Decide by whether its *old* bounds match the live region, not
+        // by `recalledLoopID` — a loop can be the active region without having
+        // been recalled via the ↩ button.
+        let eps = 0.001
+        let old = savedLoops[i]
+        let isActiveRegion = loopStart.map { abs($0 - old.start) < eps } == true
+            && loopEnd.map { abs($0 - old.end) < eps } == true
+
+        savedLoops[i].start = clampedStart
+        savedLoops[i].end = clampedEnd
+        savedLoops.sort { $0.start < $1.start }
+        persistSavedLoops()
+
+        // If it's the active region, mirror the new bounds into the live loop
+        // so the yellow bars move and playback reflects the edit immediately.
+        if isActiveRegion {
+            setLoopRegion(start: clampedStart, end: clampedEnd)
+            recalledLoopID = id  // setLoopRegion clears it; keep the link.
+        }
+        return true
+    }
+
+    /// Parse a user-entered timestamp into seconds. Accepts "m:ss" or "m:ss.d"
+    /// (e.g. "1:48", "1:48.5") and bare seconds (e.g. "108", "6.5"). Returns
+    /// nil for anything unparseable so the caller can reject/revert.
+    static func parseTime(_ text: String) -> TimeInterval? {
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return nil }
+
+        if trimmed.contains(":") {
+            let parts = trimmed.split(separator: ":", omittingEmptySubsequences: false)
+            guard parts.count == 2,
+                  let minutes = Int(parts[0]), minutes >= 0,
+                  let seconds = Double(parts[1]), seconds >= 0, seconds < 60
+            else { return nil }
+            return TimeInterval(minutes) * 60 + seconds
+        } else {
+            guard let seconds = Double(trimmed), seconds >= 0 else { return nil }
+            return seconds
+        }
     }
 
     func load(url: URL) {
@@ -768,6 +845,7 @@ final class AudioPlayer {
         loopStart = nil
         loopEnd = nil
         loopEnabled = false
+        recalledLoopID = nil
         applyLoopChange()
     }
 
@@ -779,12 +857,15 @@ final class AudioPlayer {
     }
 
     /// Set both loop points at once (e.g. from a drag across the waveform) and
-    /// enable looping if the resulting region is valid.
+    /// enable looping if the resulting region is valid. Treated as a fresh
+    /// region, so it drops any recalled-loop link (a later Save creates a new
+    /// loop). `recallLoop` re-establishes the link after calling this.
     func setLoopRegion(start: TimeInterval, end: TimeInterval) {
         loopStart = min(max(0, start), duration)
         loopEnd = min(max(0, end), duration)
         normalizeLoop()
         loopEnabled = isLoopValid
+        recalledLoopID = nil
         applyLoopChange()
     }
 
