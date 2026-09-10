@@ -59,8 +59,8 @@ struct ContentView: View {
             // Seed the editable timestamp fields from the new loop's bounds so
             // they're populated if the user tabs to them.
             if let loop = player.savedLoops.first(where: { $0.id == id }) {
-                editStartText = ContentView.timeString(loop.start)
-                editEndText = ContentView.timeString(loop.end)
+                editStartText = ContentView.timeString(loop.start, tenths: true)
+                editEndText = ContentView.timeString(loop.end, tenths: true)
             }
             editingLoopID = id
             DispatchQueue.main.async { focusedLoopID = id }
@@ -113,8 +113,8 @@ struct ContentView: View {
     /// Seed the staged timestamp fields from a loop's current bounds when it
     /// enters edit mode.
     private func beginEditing(_ loop: SavedLoop) {
-        editStartText = ContentView.timeString(loop.start)
-        editEndText = ContentView.timeString(loop.end)
+        editStartText = ContentView.timeString(loop.start, tenths: true)
+        editEndText = ContentView.timeString(loop.end, tenths: true)
         editingLoopID = loop.id
         DispatchQueue.main.async { focusedLoopID = loop.id }
     }
@@ -558,7 +558,7 @@ struct ContentView: View {
                         .onSubmit { commitLoopEdit(loop.id) }
                         .onExitCommand { cancelLoopEdit(loop.id) }
                     } else {
-                        Text("\(Self.timeString(loop.start)) – \(Self.timeString(loop.end))")
+                        Text("\(Self.timeString(loop.start, tenths: true)) – \(Self.timeString(loop.end, tenths: true))")
                             .font(.caption)
                             .monospacedDigit()
                             .foregroundStyle(.secondary)
@@ -603,7 +603,7 @@ struct ContentView: View {
             .disabled(disabled)
             .help(help ?? "")
 
-            Text(showsTime ? (time.map(Self.timeString) ?? "—") : " ")
+            Text(showsTime ? (time.map { Self.timeString($0, tenths: true) } ?? "—") : " ")
                 .font(.caption)
                 .monospacedDigit()
                 .foregroundColor(.secondary)
@@ -857,10 +857,23 @@ struct ContentView: View {
         }
     }
 
-    static func timeString(_ time: TimeInterval) -> String {
-        guard time.isFinite, time >= 0 else { return "0:00" }
-        let total = Int(time.rounded())
-        return String(format: "%d:%02d", total / 60, total % 60)
+    /// Format a time as `m:ss`, or `m:ss.d` when `tenths` is true. Tenths is
+    /// used for the live playhead and loop bounds (where sub-second precision
+    /// matters); the total track length stays whole-seconds.
+    static func timeString(_ time: TimeInterval, tenths: Bool = false) -> String {
+        guard time.isFinite, time >= 0 else { return tenths ? "0:00.0" : "0:00" }
+        if tenths {
+            // Round to a tenth, then split so carries roll up correctly
+            // (e.g. 59.97s -> 1:00.0, not 0:60.0).
+            let totalTenths = Int((time * 10).rounded())
+            let minutes = totalTenths / 600
+            let seconds = (totalTenths % 600) / 10
+            let frac = totalTenths % 10
+            return String(format: "%d:%02d.%d", minutes, seconds, frac)
+        } else {
+            let total = Int(time.rounded())
+            return String(format: "%d:%02d", total / 60, total % 60)
+        }
     }
 
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
@@ -938,7 +951,7 @@ private struct PlaybackPositionView: View {
             .disabled(player.audioFileURL == nil)
 
             HStack {
-                Text(ContentView.timeString(player.currentTime))
+                Text(ContentView.timeString(player.currentTime, tenths: true))
                 Spacer()
                 Text(ContentView.timeString(player.duration))
             }

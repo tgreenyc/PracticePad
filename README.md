@@ -52,7 +52,7 @@ Built with SwiftUI and AVFoundation. Time-stretching and pitch-shifting are done
 
 ### Seek
 - **Click** anywhere on the waveform, or drag the position slider, to jump to that spot.
-- The elapsed / total time is shown under the waveform.
+- The elapsed / total time is shown under the waveform. Elapsed time (and loop times) are shown to a tenth of a second (`m:ss.d`); the total length is shown in whole seconds.
 
 ### Loop a section (A-B)
 - **Drag across the waveform** to select a region — looping turns on automatically.
@@ -74,7 +74,7 @@ Behavior notes:
 - The **active loop** — the saved region currently looping — has its name shown in **green** (bold in the list, and on its waveform label). It's highlighted only while looping is on and the playhead is inside the region; turning Loop off, or seeking/playing outside the region, clears the highlight.
 - In the **Saved Loops** list, click the **↩** button to recall a loop (it loads into the A-B region and jumps to its start), the **pencil** to rename it, and the **trash** to delete it.
 - **Adjust an existing loop's bounds** two ways:
-  - *By typing (recommended):* click the **pencil** to edit the loop, then type new **start**/**end** times (`m:ss`, or seconds) in the fields next to the name. Invalid entries (e.g. end before start) are ignored. If the edited loop is the one currently on the waveform, its yellow A/B bars move to match.
+  - *By typing (recommended):* click the **pencil** to edit the loop, then type new **start**/**end** times (`m:ss.d`, or seconds — sub-second precision is supported) in the fields next to the name. Invalid entries (e.g. end before start) are ignored. If the edited loop is the one currently on the waveform, its yellow A/B bars move to match.
   - *On the waveform:* recall the loop, then **drag its A/B handles** to the new positions and press `⌘S` — this updates the recalled loop in place (keeping its name). Note: pressing the `A`/`B` keys instead lays down a *fresh* region, so `⌘S` then creates a **new** loop rather than editing the recalled one.
 - Editing (pencil) exposes the loop's **name and start/end times** together; press Enter or click the green ✓ to save, or Esc to cancel.
 - Cycle between saved loops with the **‹ ›** buttons or the `[` / `]` keys — handy for moving between passages while playing. Navigation wraps around, and when no loop is active it picks the one nearest the playhead.
