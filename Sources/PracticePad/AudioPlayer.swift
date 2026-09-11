@@ -479,19 +479,36 @@ final class AudioPlayer {
         recallLoop(savedLoops[target])
     }
 
-    /// Recall the previous saved loop (wrapping past the start). If no saved
-    /// loop is currently active, jumps to the last loop that starts at/before
-    /// the playhead (or the last loop if none do).
+    /// "Previous" navigation, media-player style: if a loop is active and the
+    /// playhead has moved away from its start, first return to that start;
+    /// press again (already at the start) to recall the previous saved loop.
+    /// With no active loop, jumps to the last loop starting at/before the
+    /// playhead (or the last loop if none do).
     func previousLoop() {
         guard !savedLoops.isEmpty else { return }
-        let target: Int
+
+        // First press when away from the current loop's start: go back to it
+        // rather than switching loops.
         if let current = activeSavedLoopIndex {
-            target = (current - 1 + savedLoops.count) % savedLoops.count
-        } else {
-            target = savedLoops.lastIndex { $0.start <= currentTime } ?? (savedLoops.count - 1)
+            let start = savedLoops[current].start
+            let atStart = abs(currentTime - start) < Self.loopRestartThreshold
+            if !atStart {
+                seek(to: start)
+                return
+            }
+            let target = (current - 1 + savedLoops.count) % savedLoops.count
+            recallLoop(savedLoops[target])
+            return
         }
+
+        let target = savedLoops.lastIndex { $0.start <= currentTime } ?? (savedLoops.count - 1)
         recallLoop(savedLoops[target])
     }
+
+    /// How close (seconds) the playhead must be to a loop's start to count as
+    /// "already at the start" for `previousLoop`'s two-stage behavior. A little
+    /// generous so a single restart press reliably lands "at start."
+    private static let loopRestartThreshold: TimeInterval = 0.25
 
     /// Rename a saved loop as the user types. Stores the value verbatim —
     /// including a temporarily empty string mid-edit — so the field never
